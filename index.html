@@ -226,6 +226,13 @@ table.xl td.c-self { background: #33F3FF; }
 .chgbox { border-top: 1px dashed var(--line); padding-top: 10px; }
 .chgbtn { font: inherit; font-size: .88rem; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; }
 .chgbtn[aria-pressed="true"] { background: #33FF33; color: #000; border-color: #1d7446; font-weight: 700; }
+
+.tbsel { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.tbsel button { font: inherit; font-weight: 700; font-size: .9rem; padding: 9px 2px; border-radius: 8px; border: 1px solid var(--line); background: var(--sunk); color: var(--ink); cursor: pointer; }
+.tbsel button[aria-pressed="true"] { background: #FFFF33; color: #000; border-color: #9a8f00; }
+.tbsel button:first-child[aria-pressed="true"] { background: var(--none-bg); color: var(--ink); border-color: var(--muted); }
+.tb-row { margin-top: 2px; grid-template-columns: 2.6em minmax(0, 1fr); }
+.tb-row .yn-label { font-size: .95rem; white-space: nowrap; }
 </style>
 </head>
 <body>
@@ -318,7 +325,13 @@ function writeErr(e) {
 
 const ans = (fid, eid) => (S.answers[fid] && S.answers[fid].responses && S.answers[fid].responses[eid]) || null;
 function draftFrom(a) {
-  return { father: a?.father || '', mother: a?.mother || '', car: !!a?.car, seats: a?.seats ?? 3, self: !!a?.self, note: a?.note || '' };
+  return { father: a?.father || '', mother: a?.mother || '', car: !!a?.car, seats: a?.seats ?? 3, self: !!a?.self, note: a?.note || '', toban: a?.toban || '' };
+}
+// 当番：各家庭が回答で選ぶ（'' / '父' / '母' / '両方'）。以前に係が行事で決めた当番も読めるようにしておく
+function tobanOf(ev, fid) {
+  const a = ans(fid, ev.id);
+  if (a && typeof a.toban === 'string') return a.toban;
+  return (ev.toban || []).includes(fid) ? ((ev.tobanWho || {})[fid] || '母') : '';
 }
 const carCell = a => a && a.car ? (a.seats ? `○（${a.seats}人）` : '○') : '';
 
@@ -462,13 +475,13 @@ function eventHead(ev, right) {
 
 function eventAnswerCard(ev, fid) {
   const cur = ans(fid, ev.id);
-  if (!S.drafts[ev.id]) S.drafts[ev.id] = draftFrom(cur);
+  if (!S.drafts[ev.id]) S.drafts[ev.id] = { ...draftFrom(cur), toban: tobanOf(ev, fid) };
   const d = S.drafts[ev.id];
   const late = ev.deadline && ev.deadline < todayStr();
-  const toban = (ev.toban || []).includes(fid);
+  const toban = tobanOf(ev, fid);
   return h('div', { class: 'card' },
     eventHead(ev, h('span', { class: 'chip ' + (cur ? 's-done' : 's-none') }, cur ? '回答済み' : '未回答')),
-    toban ? h('div', { class: 'notice' }, h('strong', null, `この日はあなたの家庭が当番です（${(ev.tobanWho || {})[fid] || '母'}）。`)) : null,
+    toban ? h('div', { class: 'notice' }, h('strong', null, `この日はあなたの家庭が当番です（${toban}）。`)) : null,
     ev.memo ? h('div', { class: 'memo' }, h('span', { class: 'label' }, '連絡'), h('span', null, ev.memo)) : null,
     late ? h('div', { class: 'notice' }, '回答締切を過ぎています。変更がある場合は回答のうえ、係にも一言お伝えください。') : null,
     answerForm(d, () => render(), ev.id),
@@ -496,6 +509,14 @@ function answerForm(d, rerender, key) {
         h('button', { 'aria-label': '増やす', disabled: d.seats >= 10, onclick: () => { d.seats++; rerender(); } }, '+')),
       h('span', { class: 'muted' }, '人')) : null,
     toggle('自走', 'self', '配車に乗らず、自分で行く', () => { d.car = false; }),
+    h('div', { class: 'yn-row tb-row' },
+      h('span', { class: 'yn-label' }, '当番'),
+      h('div', { class: 'tbsel', role: 'group', 'aria-label': '当番' }, [['', 'しない'], ['父', '父'], ['母', '母'], ['両方', '両方']].map(([v, t]) =>
+        h('button', { 'aria-pressed': d.toban === v ? 'true' : 'false', onclick: () => {
+          d.toban = v;
+          if (v === '父' || v === '両方') d.father = '○';
+          if (v === '母' || v === '両方') d.mother = '○';
+          rerender(); } }, t)))),
     h('div', { class: 'field' }, h('label', { class: 'label', for: 'note-' + key }, '備考'),
       h('input', { id: 'note-' + key, type: 'text', maxlength: '80', value: d.note, placeholder: '例：父は午後から', oninput: e => { d.note = e.target.value; } })));
 }
@@ -532,7 +553,7 @@ function withChanges(prev, r, ev) {
 }
 async function saveAnswer(fid, eid, d, by) {
   if (!d.father || !d.mother) { toast('父・母の参加を選んでください'); return; }
-  const r = withChanges(ans(fid, eid), { father: d.father, mother: d.mother, car: d.car, seats: d.car ? d.seats : 0, self: d.self, note: (d.note || '').trim().slice(0, 80), by, at: Date.now() }, S.events.find(e => e.id === eid));
+  const r = withChanges(ans(fid, eid), { father: d.father, mother: d.mother, car: d.car, seats: d.car ? d.seats : 0, self: d.self, note: (d.note || '').trim().slice(0, 80), toban: d.toban || '', by, at: Date.now() }, S.events.find(e => e.id === eid));
   S.saving[eid] = true; render();
   try {
     await S.db.doc(`${BASE}/answers/${fid}`).set({ responses: { [eid]: r } }, { merge: true });
@@ -555,7 +576,7 @@ function summaryView() {
   const cars = rows.filter(r => r.a && r.a.car);
   const seats = cars.reduce((t, r) => t + (Number(r.a.seats) || 0), 0);
   const selfs = rows.filter(r => r.a && r.a.self).map(r => r.f.name);
-  const toban = (ev.toban || []).map(id => surname(famById(id))).filter(Boolean);
+  const toban = families().filter(f => tobanOf(ev, f.id)).map(f => surname(f));
   const noAns = rows.filter(r => !r.a).map(r => r.f);
   // 配車の過不足：乗る選手＝名簿の人数−自走の家庭の選手。乗せられる人数はその家庭の選手も含めて数える
   const riders = fams.length - selfs.length;
@@ -613,10 +634,10 @@ function summaryView() {
 // 出席表の中身（画面とコピーで共通）。今のExcelと同じ書き方：○／×／－
 function sheetData(ev, rows, x) {
   const mk = v => v === '○' ? '○' : v === '×' ? '×' : '－';
-  const tb = ev.toban || [], whoMap = ev.tobanWho || {};
+
   const out = [], col = [];
   for (const { f, a } of rows) {
-    const isTb = tb.includes(f.id), who = whoMap[f.id] || '母';
+    const who = tobanOf(ev, f.id), isTb = !!who;
     const c = ['', '', '', ''];
     if (a) {
       const chg = effChg(a);
@@ -871,24 +892,18 @@ async function importRows(ev) {
   rows.forEach((r, i) => {
     batch.set(S.db.doc(`${BASE}/answers/${r.familyId}`), { responses: { [ev.id]: withChanges(ans(r.familyId, ev.id), {
       father: r.father, mother: r.mother, car: !!r.car, seats: r.car ? (Number(r.seats) || 0) : 0, self: !!r.self,
-      note: (r.note || '').trim().slice(0, 80), by: 'line', at: now + i }, ev) } }, { merge: true });
+      note: (r.note || '').trim().slice(0, 80), toban: r.toban ? (r.father === '○' && r.mother !== '○' ? '父' : '母') : (tobanOf(ev, r.familyId) || ''), by: 'line', at: now + i }, ev) } }, { merge: true });
   });
-  const addToban = rows.filter(r => r.toban).map(r => r.familyId).filter(id => !(ev.toban || []).includes(id));
-  if (addToban.length) {
-    const who = { ...(ev.tobanWho || {}) };
-    rows.filter(r => r.toban && addToban.includes(r.familyId)).forEach(r => { who[r.familyId] = r.father === '○' && r.mother !== '○' ? '父' : '母'; });
-    batch.set(S.db.doc(`${BASE}/events/${ev.id}`), { toban: [...(ev.toban || []), ...addToban], tobanWho: who }, { merge: true });
-  }
   try {
     await batch.commit();
     S.paste = { text: '', rows: null, loose: [], ev: null };
-    toast(`${rows.length}件を取り込みました` + (addToban.length ? `（当番 ${addToban.length}家庭を追加）` : ''));
+    toast(`${rows.length}件を取り込みました`);
     render();
   } catch (e) { writeErr(e); }
 }
 
 // ----- 代理入力 (管理者) -----
-function openProxy(fid, eid) { S.sheet = { fid, eid, d: draftFrom(ans(fid, eid)) }; renderLayer(); }
+function openProxy(fid, eid) { const ev = S.events.find(e => e.id === eid); S.sheet = { fid, eid, d: { ...draftFrom(ans(fid, eid)), toban: ev ? tobanOf(ev, fid) : '' } }; renderLayer(); }
 function renderLayer() {
   const layer = document.getElementById('layer');
   if (S.imgUrl) {
@@ -936,13 +951,13 @@ function adminView() {
     S.evForm ? null : h('button', { class: 'btn small', onclick: () => { S.evForm = { id: null, title: '', date: '', time: '', place: '', deadline: '', toban: [], tobanWho: {}, memo: '' }; render(); } }, '＋ 行事を追加')));
   if (S.evForm) evCard.append(eventForm());
   const evs = sortedEvents().reverse();
-  if (!evs.length && !S.evForm) evCard.append(h('span', { class: 'muted' }, '練習・試合・大会など、出欠を取りたい行事を登録します。当番と変更メモもここで決めます。'));
+  if (!evs.length && !S.evForm) evCard.append(h('span', { class: 'muted' }, '練習・試合・大会など、出欠を取りたい行事を登録します。当番は各家庭が回答のときに選びます。'));
   for (const ev of evs) {
     const del = S.confirmDel === 'ev:' + ev.id;
-    const tb = (ev.toban || []).map(id => famName(famById(id))).filter(Boolean);
+    const tb = families().filter(f => tobanOf(ev, f.id)).map(f => surname(f));
     evCard.append(h('div', { class: 'row between', style: 'border-top:1px solid var(--line);padding-top:10px' },
       h('div', { style: 'min-width:0' }, h('strong', null, `${fmtDate(ev.date)} ${ev.title}`),
-        h('div', { class: 'muted' }, '当番：' + (tb.length ? tb.join('、') : '未定'))),
+        h('div', { class: 'muted' }, '当番：' + (tb.length ? tb.join('、') : 'まだいません'))),
       del ? h('div', { class: 'row' }, h('span', { class: 'muted' }, '削除しますか？'),
               h('button', { class: 'btn danger small', onclick: () => delEvent(ev.id) }, '削除'),
               h('button', { class: 'btn ghost small', onclick: () => { S.confirmDel = null; render(); } }, 'やめる'))
@@ -1014,17 +1029,6 @@ function eventForm() {
     inp('title', '行事名', 'text', '例：練習試合 vs ○○シニア'),
     h('div', { class: 'grid2' }, inp('date', '日付', 'date'), inp('time', '時間', 'text', '例：8:30集合')),
     h('div', { class: 'grid2' }, inp('place', '場所', 'text', '例：○○球場'), inp('deadline', '回答締切', 'date')),
-    h('div', { class: 'stack' }, h('span', { class: 'label' }, '当番（タップするたびに 母→父→両方→外す）'),
-      families().length ? h('div', { class: 'duties' }, families().map(f => {
-        const on = F.toban.includes(f.id); const who = (F.tobanWho || {})[f.id] || '母';
-        return h('button', { class: 'duty', 'aria-pressed': on ? 'true' : 'false', onclick: () => {
-          F.tobanWho = { ...(F.tobanWho || {}) };
-          if (!on) { F.toban = [...F.toban, f.id]; F.tobanWho[f.id] = '母'; }
-          else if (who === '母') F.tobanWho[f.id] = '父';
-          else if (who === '父') F.tobanWho[f.id] = '両方';
-          else { F.toban = F.toban.filter(x => x !== f.id); delete F.tobanWho[f.id]; }
-          render(); } }, f.name, on ? h('small', null, `（${who}）`) : null);
-      })) : h('span', { class: 'muted' }, '先に名簿を登録してください。')),
     h('div', { class: 'field' }, h('label', { class: 'label', for: 'ev-memo' }, '連絡メモ（保護者の回答画面に表示されます・空欄でOK）'),
       h('textarea', { id: 'ev-memo', style: 'min-height:60px', placeholder: '例：雨天時は8時に連絡します', oninput: e => F.memo = e.target.value }, F.memo || '')),
     h('div', { class: 'row' }, h('button', { class: 'btn', onclick: saveEvent }, F.id ? '変更を保存' : '行事を登録'),
@@ -1041,7 +1045,7 @@ async function saveEvent() {
   if (!F.title.trim() || !F.date) { toast('行事名と日付を入れてください'); return; }
   const id = F.id || newId();
   const body = { title: F.title.trim(), date: F.date, time: (F.time || '').trim(), place: (F.place || '').trim(), deadline: F.deadline || '',
-                 toban: F.toban || [], tobanWho: F.tobanWho || {}, memo: (F.memo || '').trim() };
+                 toban: F.toban || [], tobanWho: F.tobanWho || {}, memo: (F.memo || '').trim() };   // 以前の当番データはそのまま残す
   try { await S.db.doc(`${BASE}/events/${id}`).set(body); S.evForm = null; S.sumEvent = id; toast('行事を保存しました'); render(); }
   catch (e) { writeErr(e); }
 }
