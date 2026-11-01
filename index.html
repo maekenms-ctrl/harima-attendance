@@ -272,6 +272,13 @@ const todayStr = () => { const t = new Date(); return `${t.getFullYear()}-${pad(
 const dParts = s => { const d = new Date(s + 'T00:00:00'); return { m: d.getMonth() + 1, d: d.getDate(), w: WD[d.getDay()] }; };
 const fmtDate = s => { if (!s) return ''; const p = dParts(s); return `${p.m}/${p.d}（${p.w}）`; };
 const famName = f => f ? f.name : '';
+// 名字だけ（同じ名字の選手がいるときは、名前の1文字目を付ける）
+const surname = f => {
+  if (!f) return '';
+  const parts = String(f.name).trim().split(/[\s　]+/), sur = parts[0], given = parts.slice(1).join('');
+  const same = families().filter(x => String(x.name).trim().split(/[\s　]+/)[0] === sur);
+  return same.length > 1 && given ? sur + given[0] : sur;   // 同じ名字は「西川颯」「西川桜」のように名前の1文字目を付ける
+};
 const families = () => S.team.families || [];
 const famById = id => families().find(f => f.id === id);
 const myFam = () => (S.member && S.member.familyId) || null;
@@ -440,7 +447,7 @@ function eventAnswerCard(ev, fid) {
   return h('div', { class: 'card' },
     eventHead(ev, h('span', { class: 'chip ' + (cur ? 's-done' : 's-none') }, cur ? '回答済み' : '未回答')),
     toban ? h('div', { class: 'notice' }, h('strong', null, `この日はあなたの家庭が当番です（${(ev.tobanWho || {})[fid] || '母'}）。`)) : null,
-    ev.memo ? h('div', { class: 'memo' }, h('span', { class: 'label' }, '変更・連絡'), h('span', null, ev.memo)) : null,
+    ev.memo ? h('div', { class: 'memo' }, h('span', { class: 'label' }, '連絡'), h('span', null, ev.memo)) : null,
     late ? h('div', { class: 'notice' }, '回答締切を過ぎています。変更がある場合は回答のうえ、係にも一言お伝えください。') : null,
     answerForm(d, () => render(), ev.id),
     h('div', { class: 'row between' },
@@ -478,16 +485,17 @@ async function linkFamily() {
     S.changingFam = false; S.drafts = {}; toast(famName(famById(fid)) + ' の家庭として登録しました'); render();
   } catch (e) { writeErr(e); }
 }
-// 締切後（締切がない行事は2回目以降）に父・母・配車が変わったら「変更」として記録する
+// 「変更」＝当初の予定（締切までの回答。締切がない行事は最初の回答）から、父・母の参加や配車が変わったこと
 function withChanges(prev, r, ev) {
-  const chg = { ...((prev && prev.chg) || {}) };
-  const after = !ev || !ev.deadline || todayStr() > ev.deadline;
-  if (prev && after) {
-    if ((prev.father || '') !== (r.father || '')) chg.father = true;
-    if ((prev.mother || '') !== (r.mother || '')) chg.mother = true;
-    if (!!prev.car !== !!r.car) chg.car = true;
-  }
-  r.chg = chg; return r;
+  const pick = x => ({ father: x.father || '', mother: x.mother || '', car: !!x.car });
+  const afterDeadline = ev && ev.deadline && todayStr() > ev.deadline;
+  let orig;
+  if (!prev) orig = pick(r);                                   // 最初の回答
+  else if (ev && ev.deadline && !afterDeadline) orig = pick(r); // 締切までは何度直しても「当初の予定」
+  else orig = prev.orig || pick(prev);
+  r.orig = orig;
+  r.chg = { father: orig.father !== (r.father || ''), mother: orig.mother !== (r.mother || ''), car: orig.car !== !!r.car };
+  return r;
 }
 async function saveAnswer(fid, eid, d, by) {
   if (!d.father || !d.mother) { toast('父・母の参加を選んでください'); return; }
@@ -514,7 +522,7 @@ function summaryView() {
   const cars = rows.filter(r => r.a && r.a.car);
   const seats = cars.reduce((t, r) => t + (Number(r.a.seats) || 0), 0);
   const selfs = rows.filter(r => r.a && r.a.self).map(r => r.f.name);
-  const toban = (ev.toban || []).map(id => famName(famById(id))).filter(Boolean);
+  const toban = (ev.toban || []).map(id => surname(famById(id))).filter(Boolean);
   const noAns = rows.filter(r => !r.a).map(r => r.f);
 
   const out = [];
@@ -549,7 +557,9 @@ function summaryView() {
     S.owner ? h('span', { class: 'muted' }, '名前の行をタップすると代理入力できます') : null,
     fams.length ? h('div', { class: 'tablewrap' }, sheet) : h('span', { class: 'muted' }, '名簿が登録されていません。'),
     cars.length ? h('span', { class: 'muted' }, `配車 ${cars.length}台・乗せられる選手 ${seats}人分`) : null,
-    h('div', null, h('button', { class: 'btn ghost small', onclick: () => copySheet(ev, X) }, '表をコピー（色付きでExcel・Wordに貼れます）'))));
+    h('div', { class: 'row' },
+      h('button', { class: 'btn small', onclick: () => shareSheetImage(ev, X) }, '画像にしてLINEで送る'),
+      h('button', { class: 'btn ghost small', onclick: () => copySheet(ev, X) }, '表をコピー（Excel・Word用）'))));
 
   if (S.owner) out.push(importCard(ev));
   if (noAns.length) {
@@ -582,7 +592,8 @@ function sheetData(ev, rows, x) {
   }
   const cnt = k => out.filter(r => r[k] === '○').length;
   const p = dParts(ev.date);
-  return { title: `${p.m}月${p.d}日　${ev.title}`, rows: out, colors: col, total: [cnt(1), cnt(2), cnt(3)], foot: [x.toban.join('、'), ev.memo || '', x.selfs.join('、')] };
+  const changed = rows.filter(({ a }) => a && a.chg && (a.chg.father || a.chg.mother || a.chg.car)).map(({ f }) => f.name);
+  return { title: `${p.m}月${p.d}日　${ev.title}`, rows: out, colors: col, total: [cnt(1), cnt(2), cnt(3)], foot: [x.toban.join('、'), changed.join('、'), x.selfs.join('、')] };
 }
 const XL = { title: '#33F3FF', head: '#D5DEE4', toban: '#FFFF33', change: '#33FF33', self: '#33F3FF' };
 function sheetHtml(ev, X) {
@@ -600,6 +611,63 @@ function sheetHtml(ev, X) {
     h += '<tr>' + td(k, c + 'background:' + col) + td(v, '', 'colspan="4"') + '</tr>';
   });
   return h + '</table>';
+}
+// 出席表を画像（PNG）にする。Excelと同じ配色
+function sheetCanvas(X) {
+  const S2 = 2, W = [190, 80, 80, 80, 300], PAD = 10, LH = 30, FONT = '"Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic","Noto Sans JP",sans-serif';
+  const TW = W.reduce((a, b) => a + b, 0), M = 16;
+  const cv = document.createElement('canvas'); const g = cv.getContext('2d');
+  const fill = { toban: XL.toban, change: XL.change, self: XL.self };
+  const wrap = (t, w, size) => { g.font = `${size}px ${FONT}`; const out = []; let line = '';
+    for (const ch of String(t)) { if (g.measureText(line + ch).width > w - PAD * 2 && line) { out.push(line); line = ch; } else line += ch; }
+    if (line) out.push(line); return out.length ? out : ['']; };
+  const rows = [];
+  rows.push({ type: 'title', h: 40 });
+  rows.push({ type: 'head', h: LH });
+  X.rows.forEach((r, i) => { const n = wrap(r[4] === '未回答' ? '' : r[4], W[4], 15).length; rows.push({ type: 'row', i, h: Math.max(LH, n * 20 + 10) }); });
+  rows.push({ type: 'total', h: LH }); rows.push({ type: 'gap', h: 12 });
+  ['当番', '変更', '自走'].forEach((k, j) => { const n = wrap(X.foot[j], TW - W[0], 15).length; rows.push({ type: 'foot', k, j, h: Math.max(LH, n * 20 + 10) }); });
+  const H = rows.reduce((a, r) => a + r.h, 0);
+  cv.width = (TW + M * 2) * S2; cv.height = (H + M * 2) * S2; g.scale(S2, S2);
+  g.fillStyle = '#FFFFFF'; g.fillRect(0, 0, TW + M * 2, H + M * 2);
+  g.textBaseline = 'middle'; g.lineWidth = 1; g.strokeStyle = '#000000';
+  const cell = (x, y, w, h, text, o = {}) => {
+    if (o.bg) { g.fillStyle = o.bg; g.fillRect(x, y, w, h); }
+    g.strokeRect(x + .5, y + .5, w, h);
+    if (o.diag) { g.beginPath(); g.moveTo(x, y + h); g.lineTo(x + w, y); g.stroke(); }
+    if (text === '' || text == null) return;
+    const size = o.size || 15; g.font = `${o.bold ? 'bold ' : ''}${size}px ${FONT}`; g.fillStyle = o.color || '#000000';
+    if (o.left) { const ls = wrap(text, w, size); g.font = `${o.bold ? 'bold ' : ''}${size}px ${FONT}`; ls.forEach((l, k) => g.fillText(l, x + PAD, y + h / 2 + (k - (ls.length - 1) / 2) * 20)); }
+    else { g.textAlign = 'center'; g.fillText(text, x + w / 2, y + h / 2); g.textAlign = 'left'; }
+  };
+  let y = M;
+  for (const r of rows) {
+    let x = M;
+    if (r.type === 'title') cell(x, y, TW, r.h, X.title, { bg: XL.title, bold: true, size: 19 });
+    else if (r.type === 'head') ['氏名', '父', '母', '配車', '備考'].forEach((t, k) => { cell(x, y, W[k], r.h, t, { bg: XL.head }); x += W[k]; });
+    else if (r.type === 'row') { const d = X.rows[r.i], c = X.colors[r.i];
+      d.forEach((t, k) => { const none = t === '未回答';
+        cell(x, y, W[k], r.h, t, k === 4 ? { left: true, color: none ? '#8A8F98' : '#000000', size: none ? 13 : 15 } : { bg: c[k] ? fill[c[k]] : null, size: k ? 17 : 15 }); x += W[k]; }); }
+    else if (r.type === 'total') { cell(x, y, W[0], r.h, '計', { bg: XL.head, bold: true }); x += W[0];
+      X.total.forEach((n, k) => { cell(x, y, W[k + 1], r.h, String(n), { bg: XL.head, bold: true }); x += W[k + 1]; }); cell(x, y, W[4], r.h, '', { diag: true }); }
+    else if (r.type === 'foot') { cell(x, y, W[0], r.h, r.k, { bg: [XL.toban, XL.change, XL.self][r.j] }); cell(x + W[0], y, TW - W[0], r.h, X.foot[r.j], { left: true }); }
+    y += r.h;
+  }
+  return cv;
+}
+async function shareSheetImage(ev, X) {
+  const cv = sheetCanvas(X);
+  const blob = await new Promise(r => cv.toBlob(r, 'image/png'));
+  const name = `出席表_${ev.date}.png`;
+  let file = null;
+  try {
+    file = new File([blob], name, { type: 'image/png' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: X.title }); return; }
+    file = null;
+  } catch (e) { if (e && e.name === 'AbortError') return; }
+  // 共有画面がすぐ開けなかったとき：画像を表示し、「共有」ボタンか長押しで送ってもらう
+  S.imgFile = file && navigator.canShare && navigator.canShare({ files: [file] }) ? file : null;
+  S.imgUrl = URL.createObjectURL(blob); renderLayer();
 }
 function copySheet(ev, X) {
   const text = [['氏名', '父', '母', '配車', '備考'].join('\t'), ...X.rows.map(r => r.map(v => v === '未回答' ? '' : v).join('\t')),
@@ -778,6 +846,17 @@ async function importRows(ev) {
 function openProxy(fid, eid) { S.sheet = { fid, eid, d: draftFrom(ans(fid, eid)) }; renderLayer(); }
 function renderLayer() {
   const layer = document.getElementById('layer');
+  if (S.imgUrl) {
+    layer.replaceChildren(h('div', { class: 'sheet-bg', onclick: e => { if (e.target === e.currentTarget) { URL.revokeObjectURL(S.imgUrl); S.imgUrl = null; renderLayer(); } } },
+      h('div', { class: 'sheet', role: 'dialog', 'aria-label': '出席表の画像' },
+        h('h2', null, '出席表の画像'),
+        h('span', { class: 'muted' }, '画像を長押しして「共有」→ LINE、または「"写真"に保存」してからLINEで送ってください。パソコンでは右クリックで保存できます。'),
+        h('img', { src: S.imgUrl, alt: '出席表', style: 'width:100%;border:1px solid var(--line);border-radius:6px' }),
+        h('div', { class: 'row' },
+          S.imgFile ? h('button', { class: 'btn', onclick: () => navigator.share({ files: [S.imgFile] }).catch(() => {}) }, '共有（LINEなど）') : null,
+          h('button', { class: 'btn ghost', onclick: () => { URL.revokeObjectURL(S.imgUrl); S.imgUrl = null; S.imgFile = null; renderLayer(); } }, '閉じる')))));
+    return;
+  }
   if (!S.sheet) { layer.replaceChildren(); return; }
   const { fid, eid, d } = S.sheet; const ev = S.events.find(e => e.id === eid); const f = famById(fid);
   if (!ev || !f) { S.sheet = null; layer.replaceChildren(); return; }
@@ -875,8 +954,8 @@ function eventForm() {
           else { F.toban = F.toban.filter(x => x !== f.id); delete F.tobanWho[f.id]; }
           render(); } }, f.name, on ? h('small', null, `（${who}）`) : null);
       })) : h('span', { class: 'muted' }, '先に名簿を登録してください。')),
-    h('div', { class: 'field' }, h('label', { class: 'label', for: 'ev-memo' }, '変更（当番の入れ替えなどのメモ・保護者にも表示されます）'),
-      h('textarea', { id: 'ev-memo', style: 'min-height:60px', placeholder: '例：当番 ○○→△△に交代', oninput: e => F.memo = e.target.value }, F.memo || '')),
+    h('div', { class: 'field' }, h('label', { class: 'label', for: 'ev-memo' }, '連絡メモ（保護者の回答画面に表示されます・空欄でOK）'),
+      h('textarea', { id: 'ev-memo', style: 'min-height:60px', placeholder: '例：雨天時は8時に連絡します', oninput: e => F.memo = e.target.value }, F.memo || '')),
     h('div', { class: 'row' }, h('button', { class: 'btn', onclick: saveEvent }, F.id ? '変更を保存' : '行事を登録'),
       h('button', { class: 'btn ghost', onclick: () => { S.evForm = null; render(); } }, 'やめる')));
 }
