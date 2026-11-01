@@ -185,6 +185,31 @@ dl.foot dd { margin: 0; min-width: 0; }
 .pv select { padding: 4px 6px; }
 .warn { font-size: .8rem; color: var(--ng); font-weight: 700; }
 pre.raw { white-space: pre-wrap; font-family: var(--body); font-size: .8rem; margin: 4px 0 0; color: var(--muted); }
+
+/* 出席表：今のExcelと同じ配色（画面の明暗に関係なく紙の見た目） */
+table.xl { border-collapse: collapse; width: 100%; min-width: 340px; background: #FFFFFF; color: #000000; font-size: .9rem; font-variant-numeric: tabular-nums; }
+table.xl td, table.xl th { border: 1px solid #000000; padding: 6px 6px; color: #000000; }
+table.xl .xl-title { background: #33F3FF; text-align: center; font-size: 1.05rem; font-weight: 700; }
+table.xl .xl-head th { background: #D5DEE4; text-align: center; font-weight: 500; font-size: .85rem; }
+table.xl td.xl-name { text-align: center; white-space: nowrap; }
+table.xl td.xl-mark { text-align: center; width: 3em; font-size: 1rem; }
+table.xl td.xl-note { font-size: .78rem; min-width: 7em; }
+table.xl .xl-none { color: #8A8F98; }
+table.xl tr.xl-total td { background: #D5DEE4; text-align: center; font-weight: 700; }
+table.xl tr.xl-total td.xl-diag { background: linear-gradient(to top right, #FFFFFF calc(50% - .6px), #000000 50%, #FFFFFF calc(50% + .6px)); }
+table.xl tr.xl-gap td { border-left: 0; border-right: 0; height: 8px; padding: 0; background: #FFFFFF; }
+table.xl .xl-toban, table.xl .xl-change, table.xl .xl-self { text-align: center; white-space: nowrap; }
+table.xl .xl-toban { background: #FFFF33; }
+table.xl .xl-change { background: #33FF33; }
+table.xl .xl-self { background: #33F3FF; }
+table.xl td.xl-foot { font-size: .85rem; }
+table.xl tr.tap { cursor: pointer; }
+table.xl tr.tap:hover td.xl-name, table.xl tr.tap:hover td.xl-mark, table.xl tr.tap:hover td.xl-note { background: #FFF4EA; }
+table.xl .proxy { color: #5F6B80; border-color: #B8C0CC; margin-left: 4px; }
+
+table.xl td.c-toban { background: #FFFF33; }
+table.xl td.c-change { background: #33FF33; }
+table.xl td.c-self { background: #33F3FF; }
 </style>
 </head>
 <body>
@@ -414,7 +439,7 @@ function eventAnswerCard(ev, fid) {
   const toban = (ev.toban || []).includes(fid);
   return h('div', { class: 'card' },
     eventHead(ev, h('span', { class: 'chip ' + (cur ? 's-done' : 's-none') }, cur ? '回答済み' : '未回答')),
-    toban ? h('div', { class: 'notice' }, h('strong', null, 'この日はあなたの家庭が当番です。')) : null,
+    toban ? h('div', { class: 'notice' }, h('strong', null, `この日はあなたの家庭が当番です（${(ev.tobanWho || {})[fid] || '母'}）。`)) : null,
     ev.memo ? h('div', { class: 'memo' }, h('span', { class: 'label' }, '変更・連絡'), h('span', null, ev.memo)) : null,
     late ? h('div', { class: 'notice' }, '回答締切を過ぎています。変更がある場合は回答のうえ、係にも一言お伝えください。') : null,
     answerForm(d, () => render(), ev.id),
@@ -453,9 +478,20 @@ async function linkFamily() {
     S.changingFam = false; S.drafts = {}; toast(famName(famById(fid)) + ' の家庭として登録しました'); render();
   } catch (e) { writeErr(e); }
 }
+// 締切後（締切がない行事は2回目以降）に父・母・配車が変わったら「変更」として記録する
+function withChanges(prev, r, ev) {
+  const chg = { ...((prev && prev.chg) || {}) };
+  const after = !ev || !ev.deadline || todayStr() > ev.deadline;
+  if (prev && after) {
+    if ((prev.father || '') !== (r.father || '')) chg.father = true;
+    if ((prev.mother || '') !== (r.mother || '')) chg.mother = true;
+    if (!!prev.car !== !!r.car) chg.car = true;
+  }
+  r.chg = chg; return r;
+}
 async function saveAnswer(fid, eid, d, by) {
   if (!d.father || !d.mother) { toast('父・母の参加を選んでください'); return; }
-  const r = { father: d.father, mother: d.mother, car: d.car, seats: d.car ? d.seats : 0, self: d.self, note: (d.note || '').trim().slice(0, 80), by, at: Date.now() };
+  const r = withChanges(ans(fid, eid), { father: d.father, mother: d.mother, car: d.car, seats: d.car ? d.seats : 0, self: d.self, note: (d.note || '').trim().slice(0, 80), by, at: Date.now() }, S.events.find(e => e.id === eid));
   S.saving[eid] = true; render();
   try {
     await S.db.doc(`${BASE}/answers/${fid}`).set({ responses: { [eid]: r } }, { merge: true });
@@ -493,27 +529,27 @@ function summaryView() {
       h('div', { class: 'stat s-car' }, h('div', { class: 'v' }, cars.length), h('div', { class: 'k' }, `配車（${seats}人分）`)),
       h('div', { class: 'stat s-none' }, h('div', { class: 'v' }, noAns.length), h('div', { class: 'k' }, '未回答')))));
 
-  const body = rows.map(({ f, a }) => h('tr', S.owner ? { class: 'tap', tabindex: '0', onclick: () => openProxy(f.id, ev.id), onkeydown: e => { if (e.key === 'Enter') openProxy(f.id, ev.id); } } : null,
-    h('td', { class: 'name' }, f.name, (ev.toban || []).includes(f.id) ? h('span', { class: 'tag' }, '当番') : null),
-    a ? [
-      h('td', { class: 'num mark' }, a.father === '○' ? '○' : ''),
-      h('td', { class: 'num mark' }, a.mother === '○' ? '○' : ''),
-      h('td', { class: 'num mark' }, carCell(a)),
-      h('td', { class: 'note' }, [a.self ? '自走' : '', a.note || ''].filter(Boolean).join('　'), a.by === 'proxy' ? h('span', { class: 'proxy' }, '代理') : a.by === 'line' ? h('span', { class: 'proxy' }, 'LINE') : null),
-    ] : h('td', { colspan: '4' }, h('span', { class: 'chip s-none' }, '未回答'))));
-  body.push(h('tr', { class: 'total' }, h('td', null, '計'), h('td', { class: 'num' }, n('father')), h('td', { class: 'num' }, n('mother')),
-    h('td', { class: 'num' }, cars.length), h('td', null, cars.length ? `乗車 ${seats}人分` : '')));
+  const X = sheetData(ev, rows, { toban, selfs, cars });
+  const tap = f => S.owner ? { class: 'tap', tabindex: '0', onclick: () => openProxy(f.id, ev.id), onkeydown: e => { if (e.key === 'Enter') openProxy(f.id, ev.id); } } : null;
+  const sheet = h('table', { class: 'xl' },
+    h('tr', null, h('td', { colspan: '5', class: 'xl-title' }, X.title)),
+    h('tr', { class: 'xl-head' }, h('th', null, '氏名'), h('th', null, '父'), h('th', null, '母'), h('th', null, '配車'), h('th', null, '備考')),
+    X.rows.map((r, i) => h('tr', tap(rows[i].f),
+      h('td', { class: 'xl-name' }, r[0]),
+      [1, 2, 3].map(k => h('td', { class: 'xl-mark' + (X.colors[i][k] ? ' c-' + X.colors[i][k] : '') }, r[k])),
+      h('td', { class: 'xl-note' }, r[4] === '未回答' ? h('span', { class: 'xl-none' }, '未回答') : r[4],
+        rows[i].a && rows[i].a.by === 'proxy' ? h('span', { class: 'proxy' }, '代理') : rows[i].a && rows[i].a.by === 'line' ? h('span', { class: 'proxy' }, 'LINE') : null))),
+    h('tr', { class: 'xl-total' }, h('td', null, '計'), h('td', null, X.total[0]), h('td', null, X.total[1]), h('td', null, X.total[2]), h('td', { class: 'xl-diag' })),
+    h('tr', { class: 'xl-gap' }, h('td', { colspan: '5' })),
+    h('tr', null, h('td', { class: 'xl-toban' }, '当番'), h('td', { colspan: '4', class: 'xl-foot' }, X.foot[0])),
+    h('tr', null, h('td', { class: 'xl-change' }, '変更'), h('td', { colspan: '4', class: 'xl-foot' }, X.foot[1])),
+    h('tr', null, h('td', { class: 'xl-self' }, '自走'), h('td', { colspan: '4', class: 'xl-foot' }, X.foot[2])));
 
   out.push(h('div', { class: 'card' },
-    h('div', { class: 'row between' }, h('h3', null, '1年生 出席表'), S.owner ? h('span', { class: 'muted' }, '行をタップで代理入力') : null),
-    fams.length ? h('div', { class: 'tablewrap' }, h('table', { class: 'sheet-table' },
-      h('thead', null, h('tr', null, h('th', null, '氏名'), h('th', { class: 'num' }, '父'), h('th', { class: 'num' }, '母'), h('th', { class: 'num' }, '配車'), h('th', null, '備考'))),
-      h('tbody', null, body))) : h('span', { class: 'muted' }, '名簿が登録されていません。'),
-    h('dl', { class: 'foot' },
-      h('dt', null, '当番'), h('dd', null, toban.length ? toban.join('、') : h('span', { class: 'muted' }, S.owner ? '未定（管理タブで決める）' : '未定')),
-      h('dt', null, '変更'), h('dd', null, ev.memo || h('span', { class: 'muted' }, 'なし')),
-      h('dt', null, '自走'), h('dd', null, selfs.length ? selfs.join('、') : h('span', { class: 'muted' }, 'なし'))),
-    h('div', null, h('button', { class: 'btn ghost small', onclick: () => copyText(tableText(ev, rows, { toban, selfs, cars, seats })) }, '表をコピー（Excel・Wordに貼れます）'))));
+    S.owner ? h('span', { class: 'muted' }, '名前の行をタップすると代理入力できます') : null,
+    fams.length ? h('div', { class: 'tablewrap' }, sheet) : h('span', { class: 'muted' }, '名簿が登録されていません。'),
+    cars.length ? h('span', { class: 'muted' }, `配車 ${cars.length}台・乗せられる選手 ${seats}人分`) : null,
+    h('div', null, h('button', { class: 'btn ghost small', onclick: () => copySheet(ev, X) }, '表をコピー（色付きでExcel・Wordに貼れます）'))));
 
   if (S.owner) out.push(importCard(ev));
   if (noAns.length) {
@@ -525,15 +561,55 @@ function summaryView() {
   }
   return out;
 }
-function tableText(ev, rows, x) {
-  const lines = [`${fmtDate(ev.date)} ${ev.title}　1年生出席表`, ['氏名', '父', '母', '配車', '備考'].join('\t')];
+// 出席表の中身（画面とコピーで共通）。今のExcelと同じ書き方：○／×／－
+function sheetData(ev, rows, x) {
+  const mk = v => v === '○' ? '○' : v === '×' ? '×' : '－';
+  const tb = ev.toban || [], whoMap = ev.tobanWho || {};
+  const out = [], col = [];
   for (const { f, a } of rows) {
-    if (!a) { lines.push([f.name, '', '', '', '未回答'].join('\t')); continue; }
-    lines.push([f.name, a.father === '○' ? '○' : '', a.mother === '○' ? '○' : '', a.car ? '○' : '', [a.self ? '自走' : '', a.car && a.seats ? `${a.seats}人乗車可` : '', a.note || ''].filter(Boolean).join(' ')].join('\t'));
+    const isTb = tb.includes(f.id), who = whoMap[f.id] || '母';
+    const c = ['', '', '', ''];
+    if (a) {
+      const chg = a.chg || {};
+      c[1] = isTb && (who === '父' || who === '両方') ? 'toban' : (a.self && a.father === '○') ? 'self' : chg.father ? 'change' : '';
+      c[2] = isTb && (who === '母' || who === '両方') ? 'toban' : (a.self && a.mother === '○') ? 'self' : chg.mother ? 'change' : '';
+      c[3] = chg.car ? 'change' : '';
+    } else if (isTb) { if (who !== '母') c[1] = 'toban'; if (who !== '父') c[2] = 'toban'; }
+    col.push(c);
+    out.push(!a ? [f.name, '', '', '', '未回答'] : [
+      f.name, mk(a.father), mk(a.mother), a.car ? '○' : (a.self ? '－' : '×'),
+      [a.self ? '自走' : '', a.car && a.seats ? `${a.seats}人乗車可` : '', a.note || ''].filter(Boolean).join('、')]);
   }
-  lines.push(['計', rows.filter(r => r.a && r.a.father === '○').length, rows.filter(r => r.a && r.a.mother === '○').length, x.cars.length, ''].join('\t'));
-  lines.push('', `当番\t${x.toban.join('、')}`, `変更\t${ev.memo || ''}`, `自走\t${x.selfs.join('、')}`);
-  return lines.join('\n');
+  const cnt = k => out.filter(r => r[k] === '○').length;
+  const p = dParts(ev.date);
+  return { title: `${p.m}月${p.d}日　${ev.title}`, rows: out, colors: col, total: [cnt(1), cnt(2), cnt(3)], foot: [x.toban.join('、'), ev.memo || '', x.selfs.join('、')] };
+}
+const XL = { title: '#33F3FF', head: '#D5DEE4', toban: '#FFFF33', change: '#33FF33', self: '#33F3FF' };
+function sheetHtml(ev, X) {
+  const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const td = (t, st = '', at = '') => `<td ${at} style="border:1px solid #000;padding:3px 8px;font-family:'Yu Gothic','Hiragino Sans',sans-serif;font-size:11pt;color:#000;${st}">${esc(t)}</td>`;
+  const c = 'text-align:center;';
+  let h = '<table style="border-collapse:collapse;">';
+  h += `<tr>${td(X.title, c + 'background:' + XL.title + ';font-size:13pt;font-weight:bold;', 'colspan="5"')}</tr>`;
+  h += '<tr>' + ['氏名', '父', '母', '配車', '備考'].map(t => td(t, c + 'background:' + XL.head)).join('') + '</tr>';
+  const bg = k => k ? 'background:' + ({ toban: XL.toban, change: XL.change, self: XL.self })[k] + ';' : '';
+  X.rows.forEach((r, i) => { const cc = X.colors[i]; h += '<tr>' + td(r[0], c + 'width:120px;') + td(r[1], c + 'width:56px;' + bg(cc[1])) + td(r[2], c + 'width:56px;' + bg(cc[2])) + td(r[3], c + 'width:56px;' + bg(cc[3])) + td(r[4] === '未回答' ? '' : r[4], 'width:200px;') + '</tr>'; });
+  h += '<tr>' + td('計', c + 'background:' + XL.head) + X.total.map(n => td(n, c + 'background:' + XL.head)).join('') + td('', '') + '</tr>';
+  h += `<tr><td colspan="5" style="height:8px;"></td></tr>`;
+  [['当番', XL.toban, X.foot[0]], ['変更', XL.change, X.foot[1]], ['自走', XL.self, X.foot[2]]].forEach(([k, col, v]) => {
+    h += '<tr>' + td(k, c + 'background:' + col) + td(v, '', 'colspan="4"') + '</tr>';
+  });
+  return h + '</table>';
+}
+function copySheet(ev, X) {
+  const text = [['氏名', '父', '母', '配車', '備考'].join('\t'), ...X.rows.map(r => r.map(v => v === '未回答' ? '' : v).join('\t')),
+    ['計', ...X.total, ''].join('\t'), '', `当番\t${X.foot[0]}`, `変更\t${X.foot[1]}`, `自走\t${X.foot[2]}`].join('\n');
+  try {
+    if (window.ClipboardItem && navigator.clipboard && navigator.clipboard.write) {
+      const item = new ClipboardItem({ 'text/html': new Blob([sheetHtml(ev, X)], { type: 'text/html' }), 'text/plain': new Blob([text], { type: 'text/plain' }) });
+      navigator.clipboard.write([item]).then(() => toast('色付きでコピーしました'), () => copyText(text));
+    } else copyText(text);
+  } catch (e) { copyText(text); }
 }
 function copyText(t, selId) {
   const fallback = () => {
@@ -546,9 +622,9 @@ function copyText(t, selId) {
 }
 
 // ---------- LINEの回答文の読み取り ----------
-const MARK = '○〇◯⭕Ｏ×✕✖xXＸ✗';
+const MARK = '○〇◯⭕ＯOoｏ0０×✕✖xXＸ✗';   // 文字認識で○が「O」「0」になることがあるので含める
 const normName = t => String(t || '').replace(/[\s　・]/g, '');
-const toMark = c => /[○〇◯⭕Ｏ]/.test(c) ? '○' : '×';
+const toMark = c => /[○〇◯⭕ＯOoｏ0０]/.test(c) ? '○' : '×';
 const EMOJI = /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}\u{200D}]/gu;
 
 function lineClean(text) {
@@ -602,6 +678,7 @@ function parseLine(text, families) {
   const blocks = []; const loose = [];
   let cur = null;
   for (const l of lines) {
+    if (/^(\d+\s*(日|時間|分)前|昨日|今日)?\s*\d{1,2}:\d{2}$/.test(l) || /^\d+\s*(日|時間|分)前$/.test(l)) { cur = null; continue; }   // スクショの時刻＝コメントの区切り
     const hit = nameAtStart(l, F);
     if (hit) { cur = { ids: hit.ids, lines: [cutName(l, hit.len)] }; blocks.push(cur); }
     else if (cur) cur.lines.push(l);
@@ -622,6 +699,7 @@ function parseLine(text, families) {
       .replace(/(父母|父|母|配車)\s*[→⇒>＞:：=＝は\-ー－—―\s]*(不参加|欠席|なし|無し|不可|参加|出席|あり|有り|可|できます|出来ます|できません|行きます)?/g, '')
       .replace(/\d+\s*[人名](まで)?(乗れます|乗車可|乗せられます)?/g, '')
       .replace(/当番(です|になります|でした)?/g, '').replace(/自走(です|します)?/g, '')
+      .replace(/[→⇒➡➔➜›»＞>]+/g, ' ').replace(/(^|\s)[-－ー—―=＝:：]+(?=\s|$)/g, ' ')
       .replace(/よろしく(お願い)?(いた)?(し|致し)?ます[!！。]*|お願い(いた)?(し|致し)?ます[!！。]*|宜しく[^\n]*/g, '')
       .replace(/^(です|になります)[。！!]*$/, '')
       .replace(/^[\s、。,，・:：→]+|[\s、。,，・]+$/g, '').trim()
@@ -648,7 +726,7 @@ function importCard(ev) {
   if (!P.rows || P.ev !== ev.id) return card;
   if (!P.rows.length) { card.append(h('div', { class: 'notice' }, '選手の名前が見つかりませんでした。各回答の最初の行に、名字か名前を書いてもらってください。')); return card; }
   const sel = (r, k) => h('select', { 'aria-label': k === 'father' ? '父' : '母', style: 'width:auto', onchange: e => { r[k] = e.target.value; } },
-    [['', '空欄'], ['○', '○'], ['×', '×']].map(([v, t]) => h('option', { value: v, selected: r[k] === v }, t)));
+    [['', '－'], ['○', '○'], ['×', '×']].map(([v, t]) => h('option', { value: v, selected: r[k] === v }, t)));
   card.append(h('div', { class: 'label' }, `読み取り結果（${P.rows.length}件）— 確かめて、違うところは直してから取り込んでください`));
   P.rows.forEach((r, i) => {
     const existing = r.familyId ? ans(r.familyId, ev.id) : null;
@@ -678,12 +756,16 @@ async function importRows(ev) {
   const batch = S.db.batch();
   const now = Date.now();
   rows.forEach((r, i) => {
-    batch.set(S.db.doc(`${BASE}/answers/${r.familyId}`), { responses: { [ev.id]: {
+    batch.set(S.db.doc(`${BASE}/answers/${r.familyId}`), { responses: { [ev.id]: withChanges(ans(r.familyId, ev.id), {
       father: r.father, mother: r.mother, car: !!r.car, seats: r.car ? (Number(r.seats) || 0) : 0, self: !!r.self,
-      note: (r.note || '').trim().slice(0, 80), by: 'line', at: now + i } } }, { merge: true });
+      note: (r.note || '').trim().slice(0, 80), by: 'line', at: now + i }, ev) } }, { merge: true });
   });
   const addToban = rows.filter(r => r.toban).map(r => r.familyId).filter(id => !(ev.toban || []).includes(id));
-  if (addToban.length) batch.set(S.db.doc(`${BASE}/events/${ev.id}`), { toban: [...(ev.toban || []), ...addToban] }, { merge: true });
+  if (addToban.length) {
+    const who = { ...(ev.tobanWho || {}) };
+    rows.filter(r => r.toban && addToban.includes(r.familyId)).forEach(r => { who[r.familyId] = r.father === '○' && r.mother !== '○' ? '父' : '母'; });
+    batch.set(S.db.doc(`${BASE}/events/${ev.id}`), { toban: [...(ev.toban || []), ...addToban], tobanWho: who }, { merge: true });
+  }
   try {
     await batch.commit();
     S.paste = { text: '', rows: null, loose: [], ev: null };
@@ -721,7 +803,7 @@ function adminView() {
     S.code ? null : h('div', { class: 'notice' }, 'まだ合言葉がありません。先に決めて保存してください。')));
 
   const evCard = h('div', { class: 'card' }, h('div', { class: 'row between' }, h('h2', null, '行事'),
-    S.evForm ? null : h('button', { class: 'btn small', onclick: () => { S.evForm = { id: null, title: '', date: '', time: '', place: '', deadline: '', toban: [], memo: '' }; render(); } }, '＋ 行事を追加')));
+    S.evForm ? null : h('button', { class: 'btn small', onclick: () => { S.evForm = { id: null, title: '', date: '', time: '', place: '', deadline: '', toban: [], tobanWho: {}, memo: '' }; render(); } }, '＋ 行事を追加')));
   if (S.evForm) evCard.append(eventForm());
   const evs = sortedEvents().reverse();
   if (!evs.length && !S.evForm) evCard.append(h('span', { class: 'muted' }, '練習・試合・大会など、出欠を取りたい行事を登録します。当番と変更メモもここで決めます。'));
@@ -735,7 +817,7 @@ function adminView() {
               h('button', { class: 'btn danger small', onclick: () => delEvent(ev.id) }, '削除'),
               h('button', { class: 'btn ghost small', onclick: () => { S.confirmDel = null; render(); } }, 'やめる'))
           : h('div', { class: 'row' },
-              h('button', { class: 'btn ghost small', onclick: () => { S.evForm = { ...ev, toban: [...(ev.toban || [])], memo: ev.memo || '' }; render(); window.scrollTo(0, 0); } }, '編集'),
+              h('button', { class: 'btn ghost small', onclick: () => { S.evForm = { ...ev, toban: [...(ev.toban || [])], tobanWho: { ...(ev.tobanWho || {}) }, memo: ev.memo || '' }; render(); window.scrollTo(0, 0); } }, '編集'),
               h('button', { class: 'btn ghost small', onclick: () => { S.confirmDel = 'ev:' + ev.id; render(); } }, '削除'))));
   }
   out.push(evCard);
@@ -782,10 +864,16 @@ function eventForm() {
     inp('title', '行事名', 'text', '例：練習試合 vs ○○シニア'),
     h('div', { class: 'grid2' }, inp('date', '日付', 'date'), inp('time', '時間', 'text', '例：8:30集合')),
     h('div', { class: 'grid2' }, inp('place', '場所', 'text', '例：○○球場'), inp('deadline', '回答締切', 'date')),
-    h('div', { class: 'stack' }, h('span', { class: 'label' }, '当番（タップで選ぶ）'),
+    h('div', { class: 'stack' }, h('span', { class: 'label' }, '当番（タップするたびに 母→父→両方→外す）'),
       families().length ? h('div', { class: 'duties' }, families().map(f => {
-        const on = F.toban.includes(f.id);
-        return h('button', { class: 'duty', 'aria-pressed': on ? 'true' : 'false', onclick: () => { F.toban = on ? F.toban.filter(x => x !== f.id) : [...F.toban, f.id]; render(); } }, f.name);
+        const on = F.toban.includes(f.id); const who = (F.tobanWho || {})[f.id] || '母';
+        return h('button', { class: 'duty', 'aria-pressed': on ? 'true' : 'false', onclick: () => {
+          F.tobanWho = { ...(F.tobanWho || {}) };
+          if (!on) { F.toban = [...F.toban, f.id]; F.tobanWho[f.id] = '母'; }
+          else if (who === '母') F.tobanWho[f.id] = '父';
+          else if (who === '父') F.tobanWho[f.id] = '両方';
+          else { F.toban = F.toban.filter(x => x !== f.id); delete F.tobanWho[f.id]; }
+          render(); } }, f.name, on ? h('small', null, `（${who}）`) : null);
       })) : h('span', { class: 'muted' }, '先に名簿を登録してください。')),
     h('div', { class: 'field' }, h('label', { class: 'label', for: 'ev-memo' }, '変更（当番の入れ替えなどのメモ・保護者にも表示されます）'),
       h('textarea', { id: 'ev-memo', style: 'min-height:60px', placeholder: '例：当番 ○○→△△に交代', oninput: e => F.memo = e.target.value }, F.memo || '')),
@@ -803,7 +891,7 @@ async function saveEvent() {
   if (!F.title.trim() || !F.date) { toast('行事名と日付を入れてください'); return; }
   const id = F.id || newId();
   const body = { title: F.title.trim(), date: F.date, time: (F.time || '').trim(), place: (F.place || '').trim(), deadline: F.deadline || '',
-                 toban: F.toban || [], memo: (F.memo || '').trim() };
+                 toban: F.toban || [], tobanWho: F.tobanWho || {}, memo: (F.memo || '').trim() };
   try { await S.db.doc(`${BASE}/events/${id}`).set(body); S.evForm = null; S.sumEvent = id; toast('行事を保存しました'); render(); }
   catch (e) { writeErr(e); }
 }
