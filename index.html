@@ -212,6 +212,20 @@ table.xl .proxy { color: #5F6B80; border-color: #B8C0CC; margin-left: 4px; }
 table.xl td.c-toban { background: #FFFF33; }
 table.xl td.c-change { background: #33FF33; }
 table.xl td.c-self { background: #33F3FF; }
+
+.dl { margin-left: 6px; font-size: .75rem; font-weight: 700; padding: 0 7px; border-radius: 999px; background: var(--none-bg); color: var(--none); white-space: nowrap; }
+.dl-soon { background: var(--tbd-bg); color: var(--tbd); }
+.dl-today { background: var(--ng-bg); color: var(--ng); }
+.dl-past { background: var(--none-bg); color: var(--muted); }
+.carbal { display: flex; flex-direction: column; gap: 2px; border-radius: 8px; padding: 8px 12px; font-size: .82rem; }
+.carbal strong { font-size: .95rem; }
+.cb-ok { background: var(--ok-bg); color: var(--ink); }
+.cb-ok strong { color: var(--ok); }
+.cb-short { background: var(--ng-bg); color: var(--ink); }
+.cb-short strong { color: var(--ng); }
+.chgbox { border-top: 1px dashed var(--line); padding-top: 10px; }
+.chgbtn { font: inherit; font-size: .88rem; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; }
+.chgbtn[aria-pressed="true"] { background: #33FF33; color: #000; border-color: #1d7446; font-weight: 700; }
 </style>
 </head>
 <body>
@@ -428,6 +442,13 @@ function answerView() {
   return out;
 }
 
+function deadlineTag(dl) {
+  const t = new Date(todayStr() + 'T00:00:00'), d = new Date(dl + 'T00:00:00');
+  const n = Math.round((d - t) / 86400000);
+  if (n < 0) return h('span', { class: 'dl dl-past' }, '締切済み');
+  if (n === 0) return h('span', { class: 'dl dl-today' }, '今日が締切');
+  return h('span', { class: 'dl' + (n <= 2 ? ' dl-soon' : '') }, `あと${n}日`);
+}
 function eventHead(ev, right) {
   const p = dParts(ev.date);
   return h('div', { class: 'ev-head' },
@@ -435,7 +456,7 @@ function eventHead(ev, right) {
     h('div', { class: 'ev-meta', style: 'flex:1' },
       h('h2', null, ev.title),
       h('span', { class: 'muted' }, [ev.time, ev.place].filter(Boolean).join('　') || ' '),
-      ev.deadline ? h('span', { class: 'muted' }, '回答締切 ' + fmtDate(ev.deadline)) : null),
+      ev.deadline ? h('span', { class: 'muted' }, '回答締切 ' + fmtDate(ev.deadline), deadlineTag(ev.deadline)) : null),
     right || null);
 }
 
@@ -487,6 +508,16 @@ async function linkFamily() {
   } catch (e) { writeErr(e); }
 }
 // 「変更」＝当初の予定（締切までの回答。締切がない行事は最初の回答）から、父・母の参加や配車が変わったこと
+// 実際に表示する「変更」の色（自動の判定に、係の手直しを上書き）
+function effChg(a) {
+  const c = { ...((a && a.chg) || {}) }, fix = (a && a.chgFix) || {};
+  for (const k of ['father', 'mother', 'car']) if (typeof fix[k] === 'boolean') c[k] = fix[k];
+  return c;
+}
+async function setChgFix(fid, eid, k, val) {
+  try { await S.db.doc(`${BASE}/answers/${fid}`).set({ responses: { [eid]: { chgFix: { [k]: val } } } }, { merge: true }); toast(val ? '緑（変更）を付けました' : '緑（変更）を消しました'); }
+  catch (e) { writeErr(e); }
+}
 function withChanges(prev, r, ev) {
   const pick = x => ({ father: x.father || '', mother: x.mother || '', car: !!x.car });
   const afterDeadline = ev && ev.deadline && todayStr() > ev.deadline;
@@ -495,6 +526,7 @@ function withChanges(prev, r, ev) {
   else if (ev && ev.deadline && !afterDeadline) orig = pick(r); // 締切までは何度直しても「当初の予定」
   else orig = prev.orig || pick(prev);
   r.orig = orig;
+  if (prev && prev.chgFix) r.chgFix = prev.chgFix;   // 係が手で付けた・消した色はそのまま残す
   r.chg = { father: orig.father !== (r.father || ''), mother: orig.mother !== (r.mother || ''), car: orig.car !== !!r.car };
   return r;
 }
@@ -525,6 +557,9 @@ function summaryView() {
   const selfs = rows.filter(r => r.a && r.a.self).map(r => r.f.name);
   const toban = (ev.toban || []).map(id => surname(famById(id))).filter(Boolean);
   const noAns = rows.filter(r => !r.a).map(r => r.f);
+  // 配車の過不足：乗る選手＝名簿の人数−自走の家庭の選手。乗せられる人数はその家庭の選手も含めて数える
+  const riders = fams.length - selfs.length;
+  const spare = seats - riders;
 
   const out = [];
   out.push(h('div', { class: 'evpick', role: 'group', 'aria-label': '行事を選ぶ' }, evs.map(e =>
@@ -557,7 +592,10 @@ function summaryView() {
   out.push(h('div', { class: 'card' },
     S.owner ? h('span', { class: 'muted' }, '名前の行をタップすると代理入力できます') : null,
     fams.length ? h('div', { class: 'tablewrap' }, sheet) : h('span', { class: 'muted' }, '名簿が登録されていません。'),
-    cars.length ? h('span', { class: 'muted' }, `配車 ${cars.length}台・乗せられる選手 ${seats}人分`) : null,
+    h('div', { class: 'carbal ' + (spare >= 0 ? 'cb-ok' : 'cb-short') },
+      h('strong', null, spare >= 0 ? `配車は足りています（あと${spare}人分の余裕）` : `配車があと${-spare}人分足りません`),
+      h('span', null, `乗せられる選手 ${seats}人分（${cars.length}台）／乗る選手 ${riders}人（名簿${fams.length}人−自走${selfs.length}家庭）`),
+      noAns.length ? h('span', null, `※未回答の${noAns.length}家庭も乗る選手として数えています`) : null),
     S.owner ? h('div', { class: 'row' },
       h('button', { class: 'btn small', onclick: () => shareSheetImage(ev, X) }, '画像にしてLINEで送る'),
       h('button', { class: 'btn ghost small', onclick: () => copySheet(ev, X) }, '表をコピー（Excel・Word用）')) : null));
@@ -581,7 +619,7 @@ function sheetData(ev, rows, x) {
     const isTb = tb.includes(f.id), who = whoMap[f.id] || '母';
     const c = ['', '', '', ''];
     if (a) {
-      const chg = a.chg || {};
+      const chg = effChg(a);
       c[1] = isTb && (who === '父' || who === '両方') ? 'toban' : (a.self && a.father === '○') ? 'self' : chg.father ? 'change' : '';
       c[2] = isTb && (who === '母' || who === '両方') ? 'toban' : (a.self && a.mother === '○') ? 'self' : chg.mother ? 'change' : '';
       c[3] = chg.car ? 'change' : '';
@@ -593,7 +631,7 @@ function sheetData(ev, rows, x) {
   }
   const cnt = k => out.filter(r => r[k] === '○').length;
   const p = dParts(ev.date);
-  const changed = rows.filter(({ a }) => a && a.chg && (a.chg.father || a.chg.mother || a.chg.car)).map(({ f }) => f.name);
+  const changed = rows.filter(({ a }) => { const c = a && effChg(a); return c && (c.father || c.mother || c.car); }).map(({ f }) => f.name);
   return { title: `${p.m}月${p.d}日　${ev.title}`, rows: out, colors: col, total: [cnt(1), cnt(2), cnt(3)], foot: [x.toban.join('、'), changed.join('、'), x.selfs.join('、')] };
 }
 const XL = { title: '#33F3FF', head: '#D5DEE4', toban: '#FFFF33', change: '#33FF33', self: '#33F3FF' };
@@ -713,12 +751,18 @@ function nameAtStart(line, F) {
   if (!sur.length) return null;
   const L = Math.max(...sur.map(f => f.sur.length));
   sur = sur.filter(f => f.sur.length === L);
+  const rest = n.slice(L);
+  let byFirst = false;
   if (sur.length > 1) {   // 同じ名字（西川さんなど）は名前の1文字目で絞る
-    const rest = n.slice(L);
     const narrowed = sur.filter(f => f.given && rest.startsWith(f.given[0]));
-    if (narrowed.length) sur = narrowed;
+    if (narrowed.length) { sur = narrowed; byFirst = true; }
   }
-  const extra = sur.length === 1 && sur[0].given && n.slice(L).startsWith(sur[0].given) ? sur[0].given.length : 0;
+  let extra = 0;
+  if (sur.length === 1 && sur[0].given) {
+    const g = sur[0].given; let k = 0;   // 「西川颯」「西川颯人」など、書いてある分だけ名前を取り除く
+    while (k < g.length && rest[k] === g[k]) k++;
+    extra = (k === g.length || byFirst) ? k : 0;
+  }
   return { ids: sur.map(f => f.id), len: L + extra };
 }
 
@@ -865,6 +909,12 @@ function renderLayer() {
     h('div', { class: 'sheet', role: 'dialog', 'aria-label': '代理入力' },
       h('div', null, h('div', { class: 'label' }, '係による代理入力'), h('h2', null, f.name), h('span', { class: 'muted' }, `${fmtDate(ev.date)} ${ev.title}`)),
       answerForm(d, renderLayer, 'proxy'),
+      ans(fid, eid) ? h('div', { class: 'stack chgbox' },
+        h('span', { class: 'label' }, '変更の色（緑）を手で直す — 押すとすぐ反映されます'),
+        h('div', { class: 'row' }, [['father', '父'], ['mother', '母'], ['car', '配車']].map(([k, t]) => {
+          const on = !!effChg(ans(fid, eid))[k];
+          return h('button', { class: 'chgbtn', 'aria-pressed': on ? 'true' : 'false', onclick: async () => { await setChgFix(fid, eid, k, !on); renderLayer(); } }, t + (on ? '：緑' : '：なし'));
+        }))) : null,
       h('div', { class: 'row between' },
         h('button', { class: 'btn ghost', onclick: () => { S.sheet = null; renderLayer(); } }, '閉じる'),
         h('button', { class: 'btn', disabled: !d.father || !d.mother, onclick: () => saveAnswer(fid, eid, d, 'proxy') }, '代理で保存')))));
