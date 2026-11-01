@@ -350,7 +350,6 @@ function loginView() {
 }
 async function login() {
   const p = new firebase.auth.GoogleAuthProvider();
-  p.setCustomParameters({ prompt: 'select_account' });
   try { await S.auth.signInWithPopup(p); }
   catch (e) {
     if (e.code === 'auth/popup-blocked') { toast('ログイン画面が開けませんでした。SafariやChromeで開き直してから、もう一度押してください。'); return; }
