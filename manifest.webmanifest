@@ -1,0 +1,14 @@
+{
+  "name": "兵庫播磨リトルシニア 父母出欠",
+  "short_name": "播磨出欠",
+  "lang": "ja",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#13284B",
+  "theme_color": "#13284B",
+  "icons": [
+    {"src": "icon-192.png", "sizes": "192x192", "type": "image/png"},
+    {"src": "icon-512.png", "sizes": "512x512", "type": "image/png"}
+  ]
+}

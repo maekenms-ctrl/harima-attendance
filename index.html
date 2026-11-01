@@ -1,0 +1,735 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>播磨シニア父母出欠</title>
+<meta name="theme-color" content="#13284B">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="播磨出欠">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
+<style>
+/* Layout: scorebook-like single column — navy team band, sticky tabs, event cards; summary as a dense roster table */
+:root {
+  --bg: #EEF2F8; --surface: #FFFFFF; --sunk: #F5F7FB; --ink: #0F1E38; --muted: #4E5D78; --line: #D2DAE7;
+  --navy: #13284B; --navy-2: #1E3A66; --on-navy: #FFFFFF; --on-navy-dim: #B4C2DA;
+  --accent: #F0802E; --accent-ink: #0F1E38; --link: #B85A14; --soft-accent: #FDE7D6;
+  --ok: #1d7446; --ok-bg: #dff1e6;
+  --ng: #B8352A; --ng-bg: #f8e2e0;
+  --tbd: #855c00; --tbd-bg: #faefd3;
+  --none: #5f6b80; --none-bg: #e3e9f3;
+  --display: "Barlow Condensed", "Arial Narrow", system-ui, sans-serif;
+  --body: "Zen Kaku Gothic New", "Hiragino Sans", "Noto Sans JP", "Yu Gothic", "Meiryo", sans-serif;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0A1426; --surface: #12203A; --sunk: #0E1A31; --ink: #EAF0FA; --muted: #9AA9C3; --line: #253757;
+  --navy: #0D1C36; --navy-2: #18305A; --on-navy: #FFFFFF; --on-navy-dim: #A9B8D2;
+  --accent: #FF8F45; --accent-ink: #14100A; --link: #FF9A4D; --soft-accent: #3A2716;
+  --ok: #73d39f; --ok-bg: #163427; --ng: #FF7A6B; --ng-bg: #3a1c1a; --tbd: #e8c266; --tbd-bg: #372d11; --none: #a3b0c6; --none-bg: #1A2B4A;
+  color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #0A1426; --surface: #12203A; --sunk: #0E1A31; --ink: #EAF0FA; --muted: #9AA9C3; --line: #253757;
+  --navy: #0D1C36; --navy-2: #18305A; --on-navy: #FFFFFF; --on-navy-dim: #A9B8D2;
+  --accent: #FF8F45; --accent-ink: #14100A; --link: #FF9A4D; --soft-accent: #3A2716;
+  --ok: #73d39f; --ok-bg: #163427; --ng: #FF7A6B; --ng-bg: #3a1c1a; --tbd: #e8c266; --tbd-bg: #372d11; --none: #a3b0c6; --none-bg: #1A2B4A;
+  color-scheme: dark }
+
+* { box-sizing: border-box }
+[hidden] { display: none !important }
+:root { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
+html, body { margin: 0 }
+img { max-width: 100% }
+.who { display: flex; gap: 8px; align-items: center; }
+.link.on-navy { color: var(--on-navy); opacity: .85; font-size: .78rem; text-decoration: underline; }
+body { background: var(--bg); color: var(--ink); font-family: var(--body); font-size: 15px; line-height: 1.6; }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--navy); }
+.wrap { max-width: 720px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+
+header.band { background: var(--navy); color: var(--on-navy); }
+header.band .wrap { padding-block: 18px 16px; display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.team { font-weight: 700; font-size: 1.25rem; line-height: 1.25; text-wrap: balance; }
+.sub { font-size: .8rem; letter-spacing: .12em; opacity: .8; }
+.seam { height: 4px; background: var(--accent); }
+.brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.brand img { width: 44px; height: 44px; border-radius: 10px; flex: none; background: var(--navy-2); }
+.team-en { font-family: var(--display); font-weight: 600; font-size: .78rem; letter-spacing: .14em; color: var(--on-navy-dim); }
+
+nav.tabs { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--bg); border-bottom: 1px solid var(--line); }
+nav.tabs .wrap { display: flex; gap: 4px; }
+nav.tabs button { flex: 1; font: inherit; font-weight: 700; padding: 12px 6px; border: 0; background: none; color: var(--muted); border-bottom: 3px solid transparent; cursor: pointer; }
+nav.tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+
+main .wrap { padding-block: 18px 48px; display: flex; flex-direction: column; gap: 16px; }
+h2 { font-size: 1.05rem; margin: 0; text-wrap: balance; }
+h3 { font-size: .95rem; margin: 0; }
+.label { font-size: .72rem; letter-spacing: .1em; color: var(--muted); font-weight: 700; }
+.muted { color: var(--muted); font-size: .88rem; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.between { justify-content: space-between; }
+.stack { display: flex; flex-direction: column; gap: 8px; }
+
+.ev-head { display: flex; gap: 12px; align-items: flex-start; }
+.datebox { flex: none; width: 58px; text-align: center; border: 1px solid var(--line); border-radius: 8px; padding: 6px 0 4px; background: var(--sunk); font-variant-numeric: tabular-nums; }
+.datebox .m { font-size: .7rem; color: var(--muted); line-height: 1; }
+.datebox .d { font-family: var(--display); font-weight: 700; font-size: 1.7rem; line-height: 1.15; }
+.datebox .w { font-size: .72rem; color: var(--muted); line-height: 1; }
+.ev-meta { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+
+.chip { display: inline-flex; align-items: center; gap: 4px; font-size: .78rem; font-weight: 700; padding: 2px 10px; border-radius: 999px; white-space: nowrap; }
+.s-出席 { background: var(--ok-bg); color: var(--ok); }
+.s-欠席 { background: var(--ng-bg); color: var(--ng); }
+.s-未定 { background: var(--tbd-bg); color: var(--tbd); }
+.s-未回答 { background: var(--none-bg); color: var(--none); }
+.proxy { font-size: .7rem; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
+
+.seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.seg button { font: inherit; font-weight: 700; padding: 10px 4px; border-radius: 8px; border: 1px solid var(--line); background: var(--sunk); color: var(--ink); cursor: pointer; }
+.seg button[aria-pressed="true"].v-出席 { background: var(--ok-bg); color: var(--ok); border-color: var(--ok); }
+.seg button[aria-pressed="true"].v-欠席 { background: var(--ng-bg); color: var(--ng); border-color: var(--ng); }
+.seg button[aria-pressed="true"].v-未定 { background: var(--tbd-bg); color: var(--tbd); border-color: var(--tbd); }
+
+.counts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.stepper { min-width: 0; border: 1px solid var(--line); border-radius: 8px; padding: 6px 4px; display: flex; flex-direction: column; align-items: center; gap: 2px; background: var(--sunk); }
+.stepper .ctl { display: flex; align-items: center; gap: 4px; }
+.stepper button { width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font-size: 1.1rem; cursor: pointer; line-height: 1; }
+.stepper button:disabled { opacity: .35; cursor: default; }
+.stepper .n { font-family: var(--display); font-weight: 700; font-size: 1.5rem; min-width: 1.2em; text-align: center; font-variant-numeric: tabular-nums; }
+
+.duties { display: flex; flex-wrap: wrap; gap: 6px; }
+.duty { font: inherit; font-size: .88rem; padding: 6px 12px; border-radius: 999px; border: 1px dashed var(--line); background: var(--surface); color: var(--ink); cursor: pointer; }
+.duty[aria-pressed="true"] { border: 1px solid var(--navy-2); background: var(--navy-2); color: var(--on-navy); }
+.duty small { opacity: .75; margin-left: 4px; font-variant-numeric: tabular-nums; }
+
+.btn { font: inherit; font-weight: 700; padding: 10px 16px; border-radius: 8px; border: 1px solid var(--accent); background: var(--accent); color: var(--accent-ink); cursor: pointer; }
+.btn.ghost { background: transparent; color: var(--ink); border-color: var(--line); }
+.btn.danger { background: var(--ng); border-color: var(--ng); color: var(--surface); }
+.btn.small { padding: 5px 10px; font-size: .82rem; }
+.btn:disabled { opacity: .5; cursor: default; }
+.link { font: inherit; background: none; border: 0; color: var(--link); font-weight: 700; cursor: pointer; padding: 0; }
+button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+input, select, textarea { font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; width: 100%; min-width: 0; }
+textarea { min-height: 96px; resize: vertical; }
+.field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+@media (max-width: 460px) { .grid2 { grid-template-columns: 1fr; } }
+
+.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.stat { border-radius: 8px; padding: 8px 6px; text-align: center; }
+.stat .v { font-family: var(--display); font-weight: 700; font-size: 1.9rem; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.stat .k { font-size: .75rem; font-weight: 700; }
+.people { font-variant-numeric: tabular-nums; }
+
+.evpick { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; }
+.evpick button { flex: none; font: inherit; font-size: .85rem; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; white-space: nowrap; }
+.evpick button[aria-pressed="true"] { background: var(--navy-2); color: var(--on-navy); border-color: var(--navy-2); }
+
+.tablewrap { overflow-x: auto; margin: 0 -16px; padding: 0 16px; }
+table { border-collapse: collapse; width: 100%; font-size: .88rem; font-variant-numeric: tabular-nums; }
+th { text-align: left; font-size: .72rem; letter-spacing: .06em; color: var(--muted); font-weight: 700; padding: 6px 6px; border-bottom: 2px solid var(--line); white-space: nowrap; }
+td { padding: 8px 6px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+tr.grade td { background: var(--sunk); font-weight: 700; font-size: .78rem; color: var(--muted); padding: 4px 6px; }
+tr.tap { cursor: pointer; }
+tr.tap:hover td { background: var(--sunk); }
+td.num { text-align: center; white-space: nowrap; }
+.bar { height: 6px; border-radius: 3px; background: var(--none-bg); overflow: hidden; min-width: 60px; }
+.bar i { display: block; height: 100%; background: var(--ok); }
+.bar.short i { background: var(--ng); }
+
+.empty { text-align: center; padding: 28px 16px; border: 1px dashed var(--line); border-radius: 10px; color: var(--muted); display: flex; flex-direction: column; gap: 8px; align-items: center; }
+.empty strong { color: var(--ink); }
+.notice { background: var(--tbd-bg); color: var(--ink); border-radius: 8px; padding: 10px 12px; font-size: .88rem; }
+
+.sheet-bg { position: fixed; inset: 0; background: rgba(10, 14, 24, .5); z-index: 20; display: flex; align-items: flex-end; justify-content: center; }
+.sheet { background: var(--surface); width: 100%; max-width: 560px; max-height: 88vh; overflow-y: auto; border-radius: 14px 14px 0 0; padding: 18px max(16px, env(safe-area-inset-left, 0px)) calc(18px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-right, 0px)); display: flex; flex-direction: column; gap: 12px; }
+.toast { position: fixed; box-shadow: 0 6px 20px rgba(0,0,0,.25); left: 50%; transform: translateX(-50%); bottom: calc(20px + env(safe-area-inset-bottom, 0px)); background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 8px; font-size: .9rem; z-index: 30; max-width: calc(100% - 32px); }
+details summary { cursor: pointer; font-weight: 700; color: var(--muted); }
+@media (prefers-reduced-motion: no-preference) { .toast { animation: up .2s ease-out; } @keyframes up { from { transform: translate(-50%, 8px); opacity: 0 } } }
+
+/* 出席表（父・母・配車・備考） */
+.yn-row { display: grid; grid-template-columns: 2.2em minmax(0, 1fr); align-items: center; gap: 8px; }
+.yn-label { font-weight: 700; font-size: 1.05rem; text-align: center; }
+.yn { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.yn button { font: inherit; font-weight: 700; padding: 10px 4px; border-radius: 8px; border: 1px solid var(--line); background: var(--sunk); color: var(--ink); cursor: pointer; }
+.yn button.v-yes[aria-pressed="true"] { background: var(--ok-bg); color: var(--ok); border-color: var(--ok); }
+.yn button.v-no[aria-pressed="true"] { background: var(--none-bg); color: var(--ink); border-color: var(--muted); }
+.check { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--sunk); cursor: pointer; }
+.check input { width: 22px; height: 22px; margin: 2px 0 0; flex: none; accent-color: var(--accent); }
+.check span { display: flex; flex-direction: column; min-width: 0; }
+.check small { color: var(--muted); font-size: .8rem; }
+.stepper.inline { flex-direction: row; justify-content: center; gap: 12px; }
+.s-done { background: var(--ok-bg); color: var(--ok); }
+.s-car { background: var(--soft-accent); color: var(--ink); }
+.s-none { background: var(--none-bg); color: var(--none); }
+.memo { display: flex; flex-direction: column; gap: 2px; background: var(--sunk); border-left: 3px solid var(--accent); padding: 8px 12px; border-radius: 0 8px 8px 0; font-size: .9rem; }
+.tag { margin-left: 6px; font-size: .68rem; font-weight: 700; color: var(--accent-ink); background: var(--accent); border-radius: 4px; padding: 0 5px; vertical-align: 1px; }
+.sheet-table td.name { white-space: nowrap; font-weight: 500; }
+.sheet-table td.mark { font-weight: 700; color: var(--ok); }
+.sheet-table td.note { font-size: .8rem; color: var(--muted); }
+.sheet-table th.num { text-align: center; }
+.sheet-table tr.total td { font-weight: 700; border-top: 2px solid var(--line); border-bottom: 0; background: var(--sunk); }
+dl.foot { display: grid; grid-template-columns: 3.5em minmax(0, 1fr); gap: 6px 10px; margin: 0; font-size: .9rem; }
+dl.foot dt { font-weight: 700; color: var(--muted); }
+dl.foot dd { margin: 0; min-width: 0; }
+.stat .k { white-space: nowrap; }
+</style>
+</head>
+<body>
+<header class="band"><div class="wrap">
+  <div class="brand"><img src="icon-512.png" alt="" width="44" height="44"><div><div class="team-en">LITTLE SENIOR HYOGO HARIMA</div><div class="team">兵庫播磨リトルシニア <span class="sub">1年生 出席表</span></div></div></div>
+  <div class="sub who"><span id="who"></span> <button class="link on-navy" id="logout" hidden>ログアウト</button></div>
+</div><div class="seam"></div></header>
+<nav class="tabs" aria-label="画面切替"><div class="wrap" id="tabs"></div></nav>
+<main><div class="wrap" id="app">
+  <div class="empty"><strong>読み込み中…</strong><span>行事と出欠の一覧を準備しています。</span></div>
+</div></main>
+<div id="layer"></div>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script>
+// ===================== 設定（ここだけ書き換える） =====================
+// Firebase コンソール →「プロジェクトの設定」→「マイアプリ」の firebaseConfig をそのまま貼る
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyC1ms_3d2SCYOfPTXc4BLg-S44zNxv1wRE",
+  authDomain: "harima-attendance.firebaseapp.com",
+  projectId: "harima-attendance",
+  storageBucket: "harima-attendance.firebasestorage.app",
+  messagingSenderId: "60308671503",
+  appId: "1:60308671503:web:5ccd2798dcce90c66c277a",
+};
+// 管理者（行事・名簿の登録、当番の割り当て、代理入力ができる人）の Gmail。複数なら並べる。
+// ※ Firestore のルールにも同じアドレスを書く
+const ADMIN_EMAILS = ["maeken.ms@gmail.com"];
+// ※ 選手の名前はこのファイルに書かないでください（GitHubで誰でも見られるため）。名簿はアプリの「管理」タブで登録します。
+// =====================================================================
+
+(() => {
+const WD = '日月火水木金土';
+const S = {
+  db: null, auth: null, user: null, owner: false, authReady: false, ready: false, slow: false, fatal: '',
+  member: null, memberLoaded: false,
+  team: { families: [] }, events: [], answers: {}, members: [], code: '',
+  tab: 'answer', sumEvent: null, drafts: {}, sheet: null,
+  evForm: null, bulk: '', confirmDel: null, pickFam: '', changingFam: false, saving: {}, codeInput: '', newCode: null,
+};
+const isLine = /\bLine\//i.test(navigator.userAgent);
+
+// ---------- helpers ----------
+function h(tag, attrs, ...kids) {
+  const el = document.createElement(tag);
+  if (attrs) for (const [k, v] of Object.entries(attrs)) {
+    if (v == null || v === false) continue;
+    if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
+    else if (k === 'class') el.className = v;
+    else if (k === 'value') el.value = v;
+    else el.setAttribute(k, v === true ? '' : v);
+  }
+  for (const c of kids.flat(Infinity)) if (c != null && c !== false) el.append(c.nodeType ? c : String(c));
+  return el;
+}
+const pad = n => String(n).padStart(2, '0');
+const todayStr = () => { const t = new Date(); return `${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())}`; };
+const dParts = s => { const d = new Date(s + 'T00:00:00'); return { m: d.getMonth() + 1, d: d.getDate(), w: WD[d.getDay()] }; };
+const fmtDate = s => { if (!s) return ''; const p = dParts(s); return `${p.m}/${p.d}（${p.w}）`; };
+const famName = f => f ? f.name : '';
+const families = () => S.team.families || [];
+const famById = id => families().find(f => f.id === id);
+const myFam = () => (S.member && S.member.familyId) || null;
+const sortedEvents = () => [...S.events].sort((a, b) => (a.date + (a.time || '')).localeCompare(b.date + (b.time || '')));
+const upcoming = () => sortedEvents().filter(e => e.date >= todayStr());
+const past = () => sortedEvents().filter(e => e.date < todayStr()).reverse();
+const newId = () => 'x' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+const BASE = 'harima/main';
+
+let toastTimer;
+function toast(msg) {
+  const old = document.querySelector('.toast'); if (old) old.remove();
+  const t = h('div', { class: 'toast', role: 'status' }, msg); document.body.append(t);
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.remove(), 3500);
+}
+function writeErr(e) {
+  console.error(e);
+  if (e && e.code === 'permission-denied') toast('保存できませんでした。権限がありません（合言葉が変わった場合は、ログアウトして入り直してください）。');
+  else toast('保存できませんでした。通信状況を確認して、もう一度お試しください。');
+}
+
+const ans = (fid, eid) => (S.answers[fid] && S.answers[fid].responses && S.answers[fid].responses[eid]) || null;
+function draftFrom(a) {
+  return { father: a?.father || '', mother: a?.mother || '', car: !!a?.car, seats: a?.seats ?? 3, self: !!a?.self, note: a?.note || '' };
+}
+const carCell = a => a && a.car ? (a.seats ? `○（${a.seats}人）` : '○') : '';
+
+// ---------- render ----------
+function render() {
+  renderTabs();
+  const f = famById(myFam());
+  document.getElementById('who').textContent = !S.user ? '' : S.owner ? '管理者' : (f ? f.name + ' の家庭' : '');
+  document.getElementById('logout').hidden = !S.user;
+  document.getElementById('app').replaceChildren(...view());
+  renderLayer();
+}
+function canSee() { return S.user && (S.owner || S.member); }
+function renderTabs() {
+  const tabs = canSee() ? [['answer', '回答する'], ['summary', '出席表'], ...(S.owner ? [['admin', '管理']] : [])] : [];
+  document.querySelector('nav.tabs').hidden = !tabs.length;
+  document.getElementById('tabs').replaceChildren(...tabs.map(([k, l]) =>
+    h('button', { 'aria-selected': S.tab === k ? 'true' : 'false', onclick: () => { S.tab = k; render(); window.scrollTo(0, 0); } }, l)));
+}
+function view() {
+  if (S.fatal) return [h('div', { class: 'empty' }, h('strong', null, '準備ができていません'), h('span', null, S.fatal))];
+  if (!S.authReady) return [h('div', { class: 'empty' }, h('strong', null, '読み込み中…'))];
+  if (!S.user) return loginView();
+  if (!S.owner && !S.memberLoaded) return [h('div', { class: 'empty' }, h('strong', null, '読み込み中…'))];
+  if (!S.owner && !S.member) return codeView();
+  if (!S.ready) return [h('div', { class: 'empty' }, h('strong', null, S.slow ? 'まだデータに接続できていません' : '読み込み中…'),
+    h('span', null, S.slow ? '通信状況を確認してください。つながりしだい表示されます。' : '行事と出席表を準備しています。'))];
+  if (S.tab === 'summary') return summaryView();
+  if (S.tab === 'admin' && S.owner) return adminView();
+  return answerView();
+}
+
+// ----- ログイン・合言葉 -----
+function loginView() {
+  const out = [];
+  if (isLine) out.push(h('div', { class: 'notice' },
+    h('strong', null, 'LINEの中ではGoogleログインができません。'), h('br'),
+    '画面右上（または右下）のメニューから「ブラウザで開く」「Safariで開く」を選んで、開き直してください。'));
+  out.push(h('div', { class: 'card', style: 'align-items:flex-start' },
+    h('h2', null, 'ログインしてください'),
+    h('span', { class: 'muted' }, 'お使いのGoogleアカウント（Gmail）でログインします。新しく登録するものはありません。初回だけ、チームの合言葉と選手名を入れます。'),
+    h('button', { class: 'btn', onclick: login }, 'Googleでログイン')));
+  return out;
+}
+async function login() {
+  const p = new firebase.auth.GoogleAuthProvider();
+  p.setCustomParameters({ prompt: 'select_account' });
+  try { await S.auth.signInWithPopup(p); }
+  catch (e) {
+    if (e.code === 'auth/popup-blocked' || e.code === 'auth/operation-not-supported-in-this-environment') { await S.auth.signInWithRedirect(p); return; }
+    if (e.code === 'auth/popup-closed-by-user' || e.code === 'auth/cancelled-popup-request') return;
+    if (e.code === 'auth/api-key-not-valid' || e.code === 'auth/invalid-api-key' || (e.message || '').includes('api-key-not-valid')) toast('設定のAPIキーが違います（index.html の apiKey を確認してください）。');
+    else if (e.code === 'auth/unauthorized-domain') toast('このページのアドレスがFirebaseに登録されていません（管理者へ連絡してください）。');
+    else toast('ログインできませんでした。もう一度お試しください。');
+    console.error(e);
+  }
+}
+function codeView() {
+  return [h('div', { class: 'card' },
+    h('h2', null, 'チームの合言葉を入れてください'),
+    h('span', { class: 'muted' }, '合言葉は係から連絡があります。最初の1回だけ必要です。'),
+    h('input', { id: 'code', type: 'text', autocomplete: 'off', value: S.codeInput, oninput: e => S.codeInput = e.target.value,
+      onkeydown: e => { if (e.key === 'Enter') joinTeam(); } }),
+    h('div', { class: 'row' }, h('button', { class: 'btn', onclick: joinTeam }, '次へ')),
+    h('span', { class: 'muted' }, `ログイン中：${S.user.email || ''}`))];
+}
+async function joinTeam() {
+  const code = S.codeInput.trim(); if (!code) { toast('合言葉を入れてください'); return; }
+  try {
+    await S.db.doc(`${BASE}/members/${S.user.uid}`).set({ code, familyId: '', name: S.user.displayName || '', at: Date.now() });
+    S.codeInput = '';
+  } catch (e) {
+    if (e.code === 'permission-denied') toast('合言葉が違います。もう一度確かめてください。');
+    else writeErr(e);
+  }
+}
+
+// ----- 回答 -----
+function answerView() {
+  const out = [];
+  if (!families().length) {
+    out.push(h('div', { class: 'empty' }, h('strong', null, 'まだ選手が登録されていません'),
+      h('span', null, S.owner ? '「管理」タブで合言葉・名簿・行事を登録すると、ここから回答できるようになります。' : '係が準備中です。しばらくお待ちください。'),
+      S.owner ? h('button', { class: 'btn', onclick: () => { S.tab = 'admin'; render(); } }, '管理タブを開く') : null));
+    return out;
+  }
+  const fid = myFam();
+  if (S.owner && !S.member) {
+    out.push(h('div', { class: 'notice' }, '管理者としてログイン中です。ご自身の家庭としても回答する場合は、「管理」タブで合言葉を保存したあと、下のボタンを押してください。'),
+      h('div', null, h('button', { class: 'btn ghost', disabled: !S.code, onclick: async () => { S.codeInput = S.code; await joinTeam(); } }, '自分の家庭も登録する')));
+    return out;
+  }
+  if (!fid || S.changingFam) {
+    out.push(h('div', { class: 'card' },
+      h('h2', null, fid ? '家庭を変更する' : 'お子さん（選手）の名前を選んでください'),
+      h('span', { class: 'muted' }, 'ご夫婦それぞれのGmailで同じ選手を選んでも大丈夫です（新しい回答が反映されます）。'),
+      h('select', { id: 'famPick', onchange: e => S.pickFam = e.target.value },
+        h('option', { value: '' }, '選手を選ぶ'),
+        families().map(f => h('option', { value: f.id, selected: (S.pickFam || fid) === f.id }, f.name))),
+      h('div', { class: 'row' },
+        h('button', { class: 'btn', onclick: linkFamily }, 'この家庭で回答する'),
+        fid ? h('button', { class: 'btn ghost', onclick: () => { S.changingFam = false; render(); } }, 'やめる') : null)));
+    return out;
+  }
+  out.push(h('div', { class: 'row between' },
+    h('div', null, h('div', { class: 'label' }, '回答する家庭'), h('h2', null, famName(famById(fid)) || '（名簿から削除された選手）')),
+    h('button', { class: 'link', onclick: () => { S.changingFam = true; S.pickFam = fid; render(); } }, '変更')));
+
+  const ups = upcoming();
+  if (!ups.length) out.push(h('div', { class: 'empty' }, h('strong', null, '予定されている行事はありません'), h('span', null, '行事が登録されるとここに表示されます。')));
+  for (const ev of ups) out.push(eventAnswerCard(ev, fid));
+
+  const ps = past();
+  if (ps.length) out.push(h('details', null, h('summary', null, `終わった行事（${ps.length}件）`),
+    h('div', { class: 'stack', style: 'margin-top:10px' }, ps.map(ev => {
+      const a = ans(fid, ev.id);
+      return h('div', { class: 'row between card', style: 'padding:10px 14px' },
+        h('span', null, `${fmtDate(ev.date)} ${ev.title}`), h('span', { class: 'chip ' + (a ? 's-done' : 's-none') }, a ? '回答済み' : '未回答'));
+    }))));
+  return out;
+}
+
+function eventHead(ev, right) {
+  const p = dParts(ev.date);
+  return h('div', { class: 'ev-head' },
+    h('div', { class: 'datebox' }, h('div', { class: 'm' }, p.m + '月'), h('div', { class: 'd' }, p.d), h('div', { class: 'w' }, p.w)),
+    h('div', { class: 'ev-meta', style: 'flex:1' },
+      h('h2', null, ev.title),
+      h('span', { class: 'muted' }, [ev.time, ev.place].filter(Boolean).join('　') || ' '),
+      ev.deadline ? h('span', { class: 'muted' }, '回答締切 ' + fmtDate(ev.deadline)) : null),
+    right || null);
+}
+
+function eventAnswerCard(ev, fid) {
+  const cur = ans(fid, ev.id);
+  if (!S.drafts[ev.id]) S.drafts[ev.id] = draftFrom(cur);
+  const d = S.drafts[ev.id];
+  const late = ev.deadline && ev.deadline < todayStr();
+  const toban = (ev.toban || []).includes(fid);
+  return h('div', { class: 'card' },
+    eventHead(ev, h('span', { class: 'chip ' + (cur ? 's-done' : 's-none') }, cur ? '回答済み' : '未回答')),
+    toban ? h('div', { class: 'notice' }, h('strong', null, 'この日はあなたの家庭が当番です。')) : null,
+    ev.memo ? h('div', { class: 'memo' }, h('span', { class: 'label' }, '変更・連絡'), h('span', null, ev.memo)) : null,
+    late ? h('div', { class: 'notice' }, '回答締切を過ぎています。変更がある場合は回答のうえ、係にも一言お伝えください。') : null,
+    answerForm(d, () => render(), ev.id),
+    h('div', { class: 'row between' },
+      h('span', { class: 'muted' }, cur ? (cur.by === 'proxy' ? '係が代理で入力済み' : '回答済み・いつでも変更できます') : ''),
+      h('button', { class: 'btn', disabled: !d.father || !d.mother || S.saving[ev.id], onclick: () => saveAnswer(fid, ev.id, d, 'self') }, cur ? '回答を更新する' : 'この内容で回答する')));
+}
+
+function answerForm(d, rerender, key) {
+  const yn = (label, k) => h('div', { class: 'yn-row' },
+    h('span', { class: 'yn-label' }, label),
+    h('div', { class: 'yn', role: 'group', 'aria-label': label }, [['○', '参加'], ['×', '不参加']].map(([v, t]) =>
+      h('button', { class: v === '○' ? 'v-yes' : 'v-no', 'aria-pressed': d[k] === v ? 'true' : 'false', onclick: () => { d[k] = v; rerender(); } }, `${v} ${t}`))));
+  const toggle = (label, k, hint, onOn) => h('label', { class: 'check', for: 'ck-' + k + '-' + key },
+    h('input', { type: 'checkbox', id: 'ck-' + k + '-' + key, checked: d[k], onchange: e => { d[k] = e.target.checked; if (d[k] && onOn) onOn(); rerender(); } }),
+    h('span', null, h('strong', null, label), hint ? h('small', null, hint) : null));
+  return h('div', { class: 'stack' },
+    yn('父', 'father'), yn('母', 'mother'),
+    toggle('配車できる', 'car', '車を出して、選手を乗せられる', () => { d.self = false; }),
+    d.car ? h('div', { class: 'stepper inline' },
+      h('span', { class: 'label' }, '乗せられる選手'),
+      h('div', { class: 'ctl' },
+        h('button', { 'aria-label': '減らす', disabled: d.seats <= 1, onclick: () => { d.seats--; rerender(); } }, '−'),
+        h('span', { class: 'n' }, d.seats),
+        h('button', { 'aria-label': '増やす', disabled: d.seats >= 7, onclick: () => { d.seats++; rerender(); } }, '+')),
+      h('span', { class: 'muted' }, '人')) : null,
+    toggle('自走', 'self', '配車に乗らず、自分で行く', () => { d.car = false; }),
+    h('div', { class: 'field' }, h('label', { class: 'label', for: 'note-' + key }, '備考'),
+      h('input', { id: 'note-' + key, type: 'text', maxlength: '80', value: d.note, placeholder: '例：父は午後から', oninput: e => { d.note = e.target.value; } })));
+}
+
+async function linkFamily() {
+  const fid = S.pickFam; if (!fid) { toast('選手を選んでください'); return; }
+  try {
+    await S.db.doc(`${BASE}/members/${S.user.uid}`).set({ familyId: fid, name: S.user.displayName || '', at: Date.now() }, { merge: true });
+    S.changingFam = false; S.drafts = {}; toast(famName(famById(fid)) + ' の家庭として登録しました'); render();
+  } catch (e) { writeErr(e); }
+}
+async function saveAnswer(fid, eid, d, by) {
+  if (!d.father || !d.mother) { toast('父・母の参加を選んでください'); return; }
+  const r = { father: d.father, mother: d.mother, car: d.car, seats: d.car ? d.seats : 0, self: d.self, note: (d.note || '').trim().slice(0, 80), by, at: Date.now() };
+  S.saving[eid] = true; render();
+  try {
+    await S.db.doc(`${BASE}/answers/${fid}`).set({ responses: { [eid]: r } }, { merge: true });
+    toast(by === 'proxy' ? '代理で保存しました' : '回答しました');
+    if (by === 'proxy') S.sheet = null;
+  } catch (e) { writeErr(e); }
+  S.saving[eid] = false; render();
+}
+
+// ----- 出席表 -----
+function summaryView() {
+  const evs = sortedEvents();
+  if (!evs.length) return [h('div', { class: 'empty' }, h('strong', null, '行事がまだありません'),
+    h('span', null, S.owner ? '「管理」タブで行事を登録すると、ここに出席表ができます。' : '行事が登録されると、ここで出席表を見られます。'))];
+  if (!S.sumEvent || !evs.find(e => e.id === S.sumEvent)) S.sumEvent = (upcoming()[0] || evs[evs.length - 1]).id;
+  const ev = evs.find(e => e.id === S.sumEvent);
+  const fams = families();
+  const rows = fams.map(f => ({ f, a: ans(f.id, ev.id) }));
+  const n = k => rows.filter(r => r.a && r.a[k] === '○').length;
+  const cars = rows.filter(r => r.a && r.a.car);
+  const seats = cars.reduce((t, r) => t + (Number(r.a.seats) || 0), 0);
+  const selfs = rows.filter(r => r.a && r.a.self).map(r => r.f.name);
+  const toban = (ev.toban || []).map(id => famName(famById(id))).filter(Boolean);
+  const noAns = rows.filter(r => !r.a).map(r => r.f);
+
+  const out = [];
+  out.push(h('div', { class: 'evpick', role: 'group', 'aria-label': '行事を選ぶ' }, evs.map(e =>
+    h('button', { 'aria-pressed': e.id === ev.id ? 'true' : 'false', onclick: () => { S.sumEvent = e.id; render(); } }, `${fmtDate(e.date)} ${e.title}`))));
+
+  out.push(h('div', { class: 'card' },
+    eventHead(ev),
+    h('div', { class: 'stats' },
+      h('div', { class: 'stat s-done' }, h('div', { class: 'v' }, n('father')), h('div', { class: 'k' }, '父')),
+      h('div', { class: 'stat s-done' }, h('div', { class: 'v' }, n('mother')), h('div', { class: 'k' }, '母')),
+      h('div', { class: 'stat s-car' }, h('div', { class: 'v' }, cars.length), h('div', { class: 'k' }, `配車（${seats}人分）`)),
+      h('div', { class: 'stat s-none' }, h('div', { class: 'v' }, noAns.length), h('div', { class: 'k' }, '未回答')))));
+
+  const body = rows.map(({ f, a }) => h('tr', S.owner ? { class: 'tap', tabindex: '0', onclick: () => openProxy(f.id, ev.id), onkeydown: e => { if (e.key === 'Enter') openProxy(f.id, ev.id); } } : null,
+    h('td', { class: 'name' }, f.name, (ev.toban || []).includes(f.id) ? h('span', { class: 'tag' }, '当番') : null),
+    a ? [
+      h('td', { class: 'num mark' }, a.father === '○' ? '○' : ''),
+      h('td', { class: 'num mark' }, a.mother === '○' ? '○' : ''),
+      h('td', { class: 'num mark' }, carCell(a)),
+      h('td', { class: 'note' }, [a.self ? '自走' : '', a.note || ''].filter(Boolean).join('　'), a.by === 'proxy' ? h('span', { class: 'proxy' }, '代理') : null),
+    ] : h('td', { colspan: '4' }, h('span', { class: 'chip s-none' }, '未回答'))));
+  body.push(h('tr', { class: 'total' }, h('td', null, '計'), h('td', { class: 'num' }, n('father')), h('td', { class: 'num' }, n('mother')),
+    h('td', { class: 'num' }, cars.length), h('td', null, cars.length ? `乗車 ${seats}人分` : '')));
+
+  out.push(h('div', { class: 'card' },
+    h('div', { class: 'row between' }, h('h3', null, '1年生 出席表'), S.owner ? h('span', { class: 'muted' }, '行をタップで代理入力') : null),
+    fams.length ? h('div', { class: 'tablewrap' }, h('table', { class: 'sheet-table' },
+      h('thead', null, h('tr', null, h('th', null, '氏名'), h('th', { class: 'num' }, '父'), h('th', { class: 'num' }, '母'), h('th', { class: 'num' }, '配車'), h('th', null, '備考'))),
+      h('tbody', null, body))) : h('span', { class: 'muted' }, '名簿が登録されていません。'),
+    h('dl', { class: 'foot' },
+      h('dt', null, '当番'), h('dd', null, toban.length ? toban.join('、') : h('span', { class: 'muted' }, S.owner ? '未定（管理タブで決める）' : '未定')),
+      h('dt', null, '変更'), h('dd', null, ev.memo || h('span', { class: 'muted' }, 'なし')),
+      h('dt', null, '自走'), h('dd', null, selfs.length ? selfs.join('、') : h('span', { class: 'muted' }, 'なし'))),
+    h('div', null, h('button', { class: 'btn ghost small', onclick: () => copyText(tableText(ev, rows, { toban, selfs, cars, seats })) }, '表をコピー（Excel・Wordに貼れます）'))));
+
+  if (noAns.length) {
+    const msg = `【${fmtDate(ev.date)} ${ev.title}】出欠が未回答のご家庭：${noAns.map(f => f.name).join('、')}。${ev.deadline ? fmtDate(ev.deadline) + 'までに' : ''}回答をお願いします。`;
+    out.push(h('div', { class: 'card' },
+      h('h3', null, `未回答 ${noAns.length}家庭`),
+      h('textarea', { id: 'remind', readonly: true, style: 'min-height:80px' }, msg),
+      h('div', null, h('button', { class: 'btn ghost small', onclick: () => copyText(msg, 'remind') }, '催促文をコピー'))));
+  }
+  return out;
+}
+function tableText(ev, rows, x) {
+  const lines = [`${fmtDate(ev.date)} ${ev.title}　1年生出席表`, ['氏名', '父', '母', '配車', '備考'].join('\t')];
+  for (const { f, a } of rows) {
+    if (!a) { lines.push([f.name, '', '', '', '未回答'].join('\t')); continue; }
+    lines.push([f.name, a.father === '○' ? '○' : '', a.mother === '○' ? '○' : '', a.car ? '○' : '', [a.self ? '自走' : '', a.car && a.seats ? `${a.seats}人乗車可` : '', a.note || ''].filter(Boolean).join(' ')].join('\t'));
+  }
+  lines.push(['計', rows.filter(r => r.a && r.a.father === '○').length, rows.filter(r => r.a && r.a.mother === '○').length, x.cars.length, ''].join('\t'));
+  lines.push('', `当番\t${x.toban.join('、')}`, `変更\t${ev.memo || ''}`, `自走\t${x.selfs.join('、')}`);
+  return lines.join('\n');
+}
+function copyText(t, selId) {
+  const fallback = () => {
+    const el = selId && document.getElementById(selId);
+    if (el) { el.focus(); el.select(); toast('文章を選択しました。長押しでコピーしてください'); }
+    else toast('コピーできませんでした。パソコンのブラウザでお試しください');
+  };
+  try { navigator.clipboard.writeText(t).then(() => toast('コピーしました'), fallback); }
+  catch (e) { fallback(); }
+}
+
+// ----- 代理入力 (管理者) -----
+function openProxy(fid, eid) { S.sheet = { fid, eid, d: draftFrom(ans(fid, eid)) }; renderLayer(); }
+function renderLayer() {
+  const layer = document.getElementById('layer');
+  if (!S.sheet) { layer.replaceChildren(); return; }
+  const { fid, eid, d } = S.sheet; const ev = S.events.find(e => e.id === eid); const f = famById(fid);
+  if (!ev || !f) { S.sheet = null; layer.replaceChildren(); return; }
+  layer.replaceChildren(h('div', { class: 'sheet-bg', onclick: e => { if (e.target === e.currentTarget) { S.sheet = null; renderLayer(); } } },
+    h('div', { class: 'sheet', role: 'dialog', 'aria-label': '代理入力' },
+      h('div', null, h('div', { class: 'label' }, '係による代理入力'), h('h2', null, f.name), h('span', { class: 'muted' }, `${fmtDate(ev.date)} ${ev.title}`)),
+      answerForm(d, renderLayer, 'proxy'),
+      h('div', { class: 'row between' },
+        h('button', { class: 'btn ghost', onclick: () => { S.sheet = null; renderLayer(); } }, '閉じる'),
+        h('button', { class: 'btn', disabled: !d.father || !d.mother, onclick: () => saveAnswer(fid, eid, d, 'proxy') }, '代理で保存')))));
+}
+
+// ----- 管理 -----
+function adminView() {
+  const out = [];
+  const codeVal = S.newCode == null ? S.code : S.newCode;
+  out.push(h('div', { class: 'card' },
+    h('h2', null, 'チームの合言葉'),
+    h('span', { class: 'muted' }, '保護者が初めてログインしたときに入れる言葉です。LINEなどで、アプリのURLと一緒に伝えてください。'),
+    h('div', { class: 'row', style: 'flex-wrap:nowrap' },
+      h('input', { id: 'teamcode', type: 'text', autocomplete: 'off', value: codeVal, placeholder: '例：harima2026', oninput: e => S.newCode = e.target.value }),
+      h('button', { class: 'btn', style: 'flex:none', onclick: saveCode }, '保存')),
+    S.code ? null : h('div', { class: 'notice' }, 'まだ合言葉がありません。先に決めて保存してください。')));
+
+  const evCard = h('div', { class: 'card' }, h('div', { class: 'row between' }, h('h2', null, '行事'),
+    S.evForm ? null : h('button', { class: 'btn small', onclick: () => { S.evForm = { id: null, title: '', date: '', time: '', place: '', deadline: '', toban: [], memo: '' }; render(); } }, '＋ 行事を追加')));
+  if (S.evForm) evCard.append(eventForm());
+  const evs = sortedEvents().reverse();
+  if (!evs.length && !S.evForm) evCard.append(h('span', { class: 'muted' }, '練習・試合・大会など、出欠を取りたい行事を登録します。当番と変更メモもここで決めます。'));
+  for (const ev of evs) {
+    const del = S.confirmDel === 'ev:' + ev.id;
+    const tb = (ev.toban || []).map(id => famName(famById(id))).filter(Boolean);
+    evCard.append(h('div', { class: 'row between', style: 'border-top:1px solid var(--line);padding-top:10px' },
+      h('div', { style: 'min-width:0' }, h('strong', null, `${fmtDate(ev.date)} ${ev.title}`),
+        h('div', { class: 'muted' }, '当番：' + (tb.length ? tb.join('、') : '未定'))),
+      del ? h('div', { class: 'row' }, h('span', { class: 'muted' }, '削除しますか？'),
+              h('button', { class: 'btn danger small', onclick: () => delEvent(ev.id) }, '削除'),
+              h('button', { class: 'btn ghost small', onclick: () => { S.confirmDel = null; render(); } }, 'やめる'))
+          : h('div', { class: 'row' },
+              h('button', { class: 'btn ghost small', onclick: () => { S.evForm = { ...ev, toban: [...(ev.toban || [])], memo: ev.memo || '' }; render(); window.scrollTo(0, 0); } }, '編集'),
+              h('button', { class: 'btn ghost small', onclick: () => { S.confirmDel = 'ev:' + ev.id; render(); } }, '削除'))));
+  }
+  out.push(evCard);
+
+  const fams = families();
+  out.push(h('div', { class: 'card' },
+    h('div', { class: 'row between' }, h('h2', null, '1年生の名簿'), h('span', { class: 'muted' }, `${fams.length}名`)),
+    h('div', { class: 'field' },
+      h('label', { class: 'label', for: 'bulk' }, 'まとめて追加（1行に1人。Excelの「氏名」の列をコピーしてそのまま貼れます）'),
+      h('textarea', { id: 'bulk', placeholder: '山田　太郎\n佐藤　次郎', oninput: e => S.bulk = e.target.value }, S.bulk)),
+    h('div', null, h('button', { class: 'btn', onclick: addBulk }, '追加する')),
+    h('div', { class: 'stack' }, fams.map((f, i) => {
+      const del = S.confirmDel === 'f:' + f.id;
+      return h('div', { class: 'row between', style: 'border-bottom:1px solid var(--line);padding-bottom:6px' },
+        h('span', null, h('span', { class: 'muted', style: 'display:inline-block;min-width:2em' }, i + 1), f.name),
+        del ? h('div', { class: 'row' }, h('button', { class: 'btn danger small', onclick: () => delFamily(f.id) }, '削除'),
+                h('button', { class: 'btn ghost small', onclick: () => { S.confirmDel = null; render(); } }, 'やめる'))
+            : h('div', { class: 'row' },
+                h('button', { class: 'btn ghost small', 'aria-label': f.name + 'を上へ', disabled: i === 0, onclick: () => moveFamily(i, -1) }, '↑'),
+                h('button', { class: 'btn ghost small', 'aria-label': f.name + 'を下へ', disabled: i === fams.length - 1, onclick: () => moveFamily(i, 1) }, '↓'),
+                h('button', { class: 'btn ghost small', onclick: () => { S.confirmDel = 'f:' + f.id; render(); } }, '削除')));
+    }))));
+
+  const mem = [...S.members];
+  out.push(h('div', { class: 'card' },
+    h('div', { class: 'row between' }, h('h2', null, 'ログインした保護者'), h('span', { class: 'muted' }, `${mem.length}人`)),
+    h('span', { class: 'muted' }, '知らない人がいたら「外す」を押してください。その人は合言葉を入れ直すまで中を見られなくなります。'),
+    mem.length ? mem.map(m => {
+      const f = famById(m.familyId); const del = S.confirmDel === 'm:' + m.id;
+      return h('div', { class: 'row between', style: 'border-bottom:1px solid var(--line);padding-bottom:6px' },
+        h('div', { style: 'min-width:0' }, h('strong', null, m.name || '（名前なし）'), h('div', { class: 'muted' }, f ? f.name + ' の家庭' : '選手未選択')),
+        del ? h('div', { class: 'row' }, h('button', { class: 'btn danger small', onclick: () => delMember(m.id) }, '外す'),
+                h('button', { class: 'btn ghost small', onclick: () => { S.confirmDel = null; render(); } }, 'やめる'))
+            : h('button', { class: 'btn ghost small', onclick: () => { S.confirmDel = 'm:' + m.id; render(); } }, '外す'));
+    }) : h('span', { class: 'muted' }, 'まだいません。')));
+  return out;
+}
+
+function eventForm() {
+  const F = S.evForm;
+  const inp = (key, label, type, ph) => h('div', { class: 'field' }, h('label', { class: 'label', for: 'ev-' + key }, label),
+    h('input', { id: 'ev-' + key, type: type || 'text', placeholder: ph || '', value: F[key] || '', oninput: e => F[key] = e.target.value }));
+  return h('div', { class: 'stack', style: 'background:var(--sunk);border-radius:8px;padding:12px' },
+    inp('title', '行事名', 'text', '例：練習試合 vs ○○シニア'),
+    h('div', { class: 'grid2' }, inp('date', '日付', 'date'), inp('time', '時間', 'text', '例：8:30集合')),
+    h('div', { class: 'grid2' }, inp('place', '場所', 'text', '例：○○球場'), inp('deadline', '回答締切', 'date')),
+    h('div', { class: 'stack' }, h('span', { class: 'label' }, '当番（タップで選ぶ）'),
+      families().length ? h('div', { class: 'duties' }, families().map(f => {
+        const on = F.toban.includes(f.id);
+        return h('button', { class: 'duty', 'aria-pressed': on ? 'true' : 'false', onclick: () => { F.toban = on ? F.toban.filter(x => x !== f.id) : [...F.toban, f.id]; render(); } }, f.name);
+      })) : h('span', { class: 'muted' }, '先に名簿を登録してください。')),
+    h('div', { class: 'field' }, h('label', { class: 'label', for: 'ev-memo' }, '変更（当番の入れ替えなどのメモ・保護者にも表示されます）'),
+      h('textarea', { id: 'ev-memo', style: 'min-height:60px', placeholder: '例：当番 ○○→△△に交代', oninput: e => F.memo = e.target.value }, F.memo || '')),
+    h('div', { class: 'row' }, h('button', { class: 'btn', onclick: saveEvent }, F.id ? '変更を保存' : '行事を登録'),
+      h('button', { class: 'btn ghost', onclick: () => { S.evForm = null; render(); } }, 'やめる')));
+}
+async function saveCode() {
+  const c = (S.newCode == null ? S.code : S.newCode).trim();
+  if (c.length < 4) { toast('合言葉は4文字以上にしてください'); return; }
+  try { await S.db.doc(`${BASE}/private/code`).set({ code: c }); S.code = c; S.newCode = null; toast('合言葉を保存しました'); render(); }
+  catch (e) { writeErr(e); }
+}
+async function saveEvent() {
+  const F = S.evForm;
+  if (!F.title.trim() || !F.date) { toast('行事名と日付を入れてください'); return; }
+  const id = F.id || newId();
+  const body = { title: F.title.trim(), date: F.date, time: (F.time || '').trim(), place: (F.place || '').trim(), deadline: F.deadline || '',
+                 toban: F.toban || [], memo: (F.memo || '').trim() };
+  try { await S.db.doc(`${BASE}/events/${id}`).set(body); S.evForm = null; S.sumEvent = id; toast('行事を保存しました'); render(); }
+  catch (e) { writeErr(e); }
+}
+async function delEvent(id) {
+  try { await S.db.doc(`${BASE}/events/${id}`).delete(); S.confirmDel = null; toast('行事を削除しました'); render(); }
+  catch (e) { writeErr(e); }
+}
+async function delMember(id) {
+  try { await S.db.doc(`${BASE}/members/${id}`).delete(); S.confirmDel = null; toast('外しました'); render(); }
+  catch (e) { writeErr(e); }
+}
+async function saveRoster(list, msg) {
+  try { await S.db.doc(BASE).set({ families: list }, { merge: true }); S.confirmDel = null; if (msg) toast(msg); render(); }
+  catch (e) { writeErr(e); }
+}
+function addBulk() {
+  const norm = t => t.replace(/[\s　]+/g, '');
+  const cur = families();
+  const names = S.bulk.split('\n').map(l => l.split('\t')[0].trim()).filter(l => l && !['氏名', '計', '当番', '変更', '自走'].includes(norm(l)) && !/出席表/.test(l));
+  if (!names.length) { toast('1行に1人ずつ名前を入れてください'); return; }
+  const add = names.filter((n, i) => !cur.some(f => norm(f.name) === norm(n)) && names.findIndex(m => norm(m) === norm(n)) === i)
+    .map(n => ({ id: newId(), name: n }));
+  S.bulk = '';
+  if (!add.length) { toast('新しく追加する名前はありませんでした'); render(); return; }
+  saveRoster([...cur, ...add], `${add.length}名を追加しました`);
+}
+function moveFamily(i, dir) {
+  const list = [...families()]; const j = i + dir; if (j < 0 || j >= list.length) return;
+  [list[i], list[j]] = [list[j], list[i]]; saveRoster(list);
+}
+function delFamily(id) { saveRoster(families().filter(f => f.id !== id), '削除しました'); }
+
+// ---------- 起動 ----------
+let unsubs = [];
+function stopData() { unsubs.forEach(u => u()); unsubs = []; S.ready = false; }
+function startData() {
+  if (unsubs.length) return;
+  const got = { team: false, events: false, answers: false };
+  if (S.owner) got.members = false;
+  const slowTimer = setTimeout(() => { if (!S.ready) { S.slow = true; render(); } }, 10000);
+  const mark = (k, snap) => {
+    if (!snap.metadata.fromCache) got[k] = true;
+    if (!S.ready && Object.values(got).every(Boolean)) { S.ready = true; S.slow = false; clearTimeout(slowTimer); }
+    if (S.ready) render();
+  };
+  const onErr = e => { console.error(e); clearTimeout(slowTimer); if (e.code === 'permission-denied') { stopData(); } render(); };
+  const db = S.db;
+  unsubs.push(db.doc(BASE).onSnapshot({ includeMetadataChanges: true }, s => { S.team = s.exists ? s.data() : { families: [] }; mark('team', s); }, onErr));
+  unsubs.push(db.collection(`${BASE}/events`).onSnapshot({ includeMetadataChanges: true }, s => { S.events = s.docs.map(d => ({ id: d.id, ...d.data() })); mark('events', s); }, onErr));
+  unsubs.push(db.collection(`${BASE}/answers`).onSnapshot({ includeMetadataChanges: true }, s => { const m = {}; s.docs.forEach(d => m[d.id] = d.data()); S.answers = m; mark('answers', s); }, onErr));
+  if (S.owner) {
+    unsubs.push(db.collection(`${BASE}/members`).onSnapshot({ includeMetadataChanges: true }, s => { S.members = s.docs.map(d => ({ id: d.id, ...d.data() })); mark('members', s); }, onErr));
+    db.doc(`${BASE}/private/code`).get().then(s => { S.code = s.exists ? (s.data().code || '') : ''; render(); }).catch(() => {});
+  }
+}
+
+let memberUnsub = null;
+function boot() {
+  if (!FIREBASE_CONFIG.apiKey || !window.firebase) { S.fatal = 'index.html の「設定」に Firebase の情報が入っていません。'; render(); return; }
+  firebase.initializeApp(FIREBASE_CONFIG);
+  S.auth = firebase.auth(); S.db = firebase.firestore();
+  S.auth.getRedirectResult().catch(e => console.error(e));
+  document.getElementById('logout').addEventListener('click', () => S.auth.signOut());
+  S.auth.onAuthStateChanged(u => {
+    S.user = u; S.authReady = true;
+    S.owner = !!(u && u.email && ADMIN_EMAILS.map(x => x.toLowerCase()).includes(u.email.toLowerCase()));
+    stopData(); if (memberUnsub) { memberUnsub(); memberUnsub = null; }
+    S.member = null; S.memberLoaded = false; S.drafts = {}; S.tab = 'answer';
+    if (u) {
+      memberUnsub = S.db.doc(`${BASE}/members/${u.uid}`).onSnapshot(s => {
+        S.member = s.exists ? s.data() : null; S.memberLoaded = true;
+        if (S.owner || S.member) startData(); else stopData();
+        render();
+      }, e => { console.error(e); S.memberLoaded = true; render(); });
+      if (S.owner) startData();
+    }
+    render();
+  });
+}
+render();
+boot();
+})();
+</script>
+</body>
+</html>
