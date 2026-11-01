@@ -233,6 +233,13 @@ table.xl td.c-self { background: #33F3FF; }
 .tbsel button:first-child[aria-pressed="true"] { background: var(--none-bg); color: var(--ink); border-color: var(--muted); }
 .tb-row { margin-top: 2px; grid-template-columns: 2.6em minmax(0, 1fr); }
 .tb-row .yn-label { font-size: .95rem; white-space: nowrap; }
+
+.evinfo { border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; background: var(--sunk); }
+.evinfo summary { font-size: .85rem; }
+dl.evdl { display: grid; grid-template-columns: 4.5em minmax(0, 1fr); gap: 2px 10px; margin: 8px 0 0; font-size: .9rem; }
+dl.evdl dt { color: var(--muted); font-weight: 700; }
+dl.evdl dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.evinfo .memo { margin-top: 8px; white-space: pre-wrap; background: var(--surface); }
 </style>
 </head>
 <body>
@@ -468,7 +475,7 @@ function eventHead(ev, right) {
     h('div', { class: 'datebox' }, h('div', { class: 'm' }, p.m + '月'), h('div', { class: 'd' }, p.d), h('div', { class: 'w' }, p.w)),
     h('div', { class: 'ev-meta', style: 'flex:1' },
       h('h2', null, ev.title),
-      h('span', { class: 'muted' }, [ev.time, ev.place].filter(Boolean).join('　') || ' '),
+      h('span', { class: 'muted' }, [ev.meet ? '集合 ' + ev.meet : '', ev.time, ev.place].filter(Boolean).join('　') || ' '),
       ev.deadline ? h('span', { class: 'muted' }, '回答締切 ' + fmtDate(ev.deadline), deadlineTag(ev.deadline)) : null),
     right || null);
 }
@@ -482,7 +489,9 @@ function eventAnswerCard(ev, fid) {
   return h('div', { class: 'card' },
     eventHead(ev, h('span', { class: 'chip ' + (cur ? 's-done' : 's-none') }, cur ? '回答済み' : '未回答')),
     toban ? h('div', { class: 'notice' }, h('strong', null, `この日はあなたの家庭が当番です（${toban}）。`)) : null,
-    ev.memo ? h('div', { class: 'memo' }, h('span', { class: 'label' }, '連絡'), h('span', null, ev.memo)) : null,
+    (eventDetails(ev).length || ev.memo) ? h('details', { class: 'evinfo', open: !cur }, h('summary', null, '行事の詳細'),
+      eventDetails(ev).length ? h('dl', { class: 'evdl' }, eventDetails(ev).map(([l, v]) => [h('dt', null, l), h('dd', null, v)])) : null,
+      ev.memo ? h('div', { class: 'memo' }, h('span', null, ev.memo)) : null) : null,
     late ? h('div', { class: 'notice' }, '回答締切を過ぎています。変更がある場合は回答のうえ、係にも一言お伝えください。') : null,
     answerForm(d, () => render(), ev.id),
     h('div', { class: 'row between' },
@@ -963,6 +972,8 @@ function adminView() {
               h('button', { class: 'btn ghost small', onclick: () => { S.confirmDel = null; render(); } }, 'やめる'))
           : h('div', { class: 'row' },
               h('button', { class: 'btn ghost small', onclick: () => { S.evForm = { ...ev, toban: [...(ev.toban || [])], tobanWho: { ...(ev.tobanWho || {}) }, memo: ev.memo || '' }; render(); window.scrollTo(0, 0); } }, '編集'),
+              h('button', { class: 'btn ghost small', onclick: () => { const { id, ...rest } = ev; S.evForm = { ...rest, id: null, title: rest.title, date: '', deadline: '', toban: [], tobanWho: {} }; toast('内容を写しました。日付と行事名を直して登録してください'); render(); window.scrollTo(0, 0); } }, '複製'),
+              h('button', { class: 'btn ghost small', onclick: () => copyText(eventNoticeText(ev)) }, '案内文'),
               h('button', { class: 'btn ghost small', onclick: () => { S.confirmDel = 'ev:' + ev.id; render(); } }, '削除'))));
   }
   out.push(evCard);
@@ -1021,16 +1032,38 @@ function adminView() {
   return out;
 }
 
+// 行事の詳細の項目（LINEのノートの案内と同じ並び）。空欄の項目は表示しません
+const EV_FIELDS = [
+  ['place', '場所', '例：社第二グラウンド'], ['address', '住所', '例：加東市藤田473-1'],
+  ['time', '時間', '例：9:00 第1試合'], ['meet', '集合', '例：6:00'], ['depart', '出発', '例：6:15'],
+  ['opp', '相手', '例：尼崎北シニア'], ['wear', '服装', '例：公式ユニホーム'], ['staff', 'スタッフ', '例：2〜3名（調整中）'],
+  ['meal', '食事', '例：おにぎり準備要'], ['bench', 'ベンチ', '例：1塁側'], ['ump', '審判', '例：支援審判（3塁審）'],
+];
+function eventDetails(ev) {
+  const rows = EV_FIELDS.filter(([k]) => (ev[k] || '').trim()).map(([k, l]) => [l, ev[k].trim()]);
+  return rows;
+}
+function eventNoticeText(ev) {
+  const p = dParts(ev.date);
+  const lines = [`${p.m}月${p.d}日（${p.w}）${ev.title}`];
+  if (ev.deadline) { const q = dParts(ev.deadline); lines.push(`出欠確認　〆切　${q.m}月${q.d}日（${q.w}）`); }
+  lines.push('');
+  for (const [l, v] of eventDetails(ev)) lines.push(`${l}：${v}`);
+  if ((ev.memo || '').trim()) lines.push(ev.memo.trim());
+  lines.push('', '※出欠／配車・当番の回答はこちらからお願いします。', location.origin + location.pathname + '?openExternalBrowser=1');
+  return lines.join('\n');
+}
 function eventForm() {
   const F = S.evForm;
   const inp = (key, label, type, ph) => h('div', { class: 'field' }, h('label', { class: 'label', for: 'ev-' + key }, label),
     h('input', { id: 'ev-' + key, type: type || 'text', placeholder: ph || '', value: F[key] || '', oninput: e => F[key] = e.target.value }));
   return h('div', { class: 'stack', style: 'background:var(--sunk);border-radius:8px;padding:12px' },
     inp('title', '行事名', 'text', '例：練習試合 vs ○○シニア'),
-    h('div', { class: 'grid2' }, inp('date', '日付', 'date'), inp('time', '時間', 'text', '例：8:30集合')),
-    h('div', { class: 'grid2' }, inp('place', '場所', 'text', '例：○○球場'), inp('deadline', '回答締切', 'date')),
-    h('div', { class: 'field' }, h('label', { class: 'label', for: 'ev-memo' }, '連絡メモ（保護者の回答画面に表示されます・空欄でOK）'),
-      h('textarea', { id: 'ev-memo', style: 'min-height:60px', placeholder: '例：雨天時は8時に連絡します', oninput: e => F.memo = e.target.value }, F.memo || '')),
+    h('div', { class: 'grid2' }, inp('date', '日付', 'date'), inp('deadline', '回答締切', 'date')),
+    h('span', { class: 'muted' }, '下の項目は、書いたものだけ保護者の画面と案内文に出ます。空欄でかまいません。'),
+    h('div', { class: 'grid2' }, EV_FIELDS.map(([k, l, ph]) => inp(k, l, 'text', ph))),
+    h('div', { class: 'field' }, h('label', { class: 'label', for: 'ev-memo' }, 'その他・連絡（自由に書けます）'),
+      h('textarea', { id: 'ev-memo', style: 'min-height:96px', placeholder: '例：※BSO\n※投球カウント\n※本部当番\nこの大会は2年保護者で審判、本部対応のサポートします。', oninput: e => F.memo = e.target.value }, F.memo || '')),
     h('div', { class: 'row' }, h('button', { class: 'btn', onclick: saveEvent }, F.id ? '変更を保存' : '行事を登録'),
       h('button', { class: 'btn ghost', onclick: () => { S.evForm = null; render(); } }, 'やめる')));
 }
@@ -1044,8 +1077,9 @@ async function saveEvent() {
   const F = S.evForm;
   if (!F.title.trim() || !F.date) { toast('行事名と日付を入れてください'); return; }
   const id = F.id || newId();
-  const body = { title: F.title.trim(), date: F.date, time: (F.time || '').trim(), place: (F.place || '').trim(), deadline: F.deadline || '',
+  const body = { title: F.title.trim(), date: F.date, deadline: F.deadline || '',
                  toban: F.toban || [], tobanWho: F.tobanWho || {}, memo: (F.memo || '').trim() };   // 以前の当番データはそのまま残す
+  for (const [k] of EV_FIELDS) body[k] = (F[k] || '').trim().slice(0, 100);
   try { await S.db.doc(`${BASE}/events/${id}`).set(body); S.evForm = null; S.sumEvent = id; toast('行事を保存しました'); render(); }
   catch (e) { writeErr(e); }
 }
