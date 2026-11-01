@@ -1,6 +1,6 @@
 {
-  "name": "兵庫播磨リトルシニア 父母出欠",
-  "short_name": "播磨出欠",
+  "name": "兵庫播磨出欠",
+  "short_name": "兵庫播磨出欠",
   "lang": "ja",
   "start_url": "./",
   "scope": "./",
