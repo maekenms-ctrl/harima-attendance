@@ -41,6 +41,8 @@
   color-scheme: dark }
 
 * { box-sizing: border-box }
+/* 連続タップで画面が拡大しないように（2本指での拡大はそのまま使えます） */
+html, body, button, a, label, input, select, textarea { touch-action: manipulation; }
 [hidden] { display: none !important }
 :root { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
 html, body { margin: 0 }
@@ -115,7 +117,7 @@ h3 { font-size: .95rem; margin: 0; }
 .link { font: inherit; background: none; border: 0; color: var(--link); font-weight: 700; cursor: pointer; padding: 0; }
 button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-input, select, textarea { font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; width: 100%; min-width: 0; }
+input, select, textarea { font: inherit; font-size: 16px; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; width: 100%; min-width: 0; }
 textarea { min-height: 96px; resize: vertical; }
 .field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
@@ -237,9 +239,9 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "60308671503",
   appId: "1:60308671503:web:5ccd2798dcce90c66c277a",
 };
-// 管理者（行事・名簿の登録、当番の割り当て、代理入力ができる人）の Gmail。複数なら並べる。
-// ※ Firestore のルールにも同じアドレスを書く
-const ADMIN_EMAILS = ["maeken.ms@gmail.com"];
+// 代表の管理者の Gmail（ほかの管理者は、アプリの「管理」タブで代表が選任します）
+// ※ Firestore のルールの mainAdmin() にも同じアドレスを書く
+const MAIN_ADMIN = "maeken.ms@gmail.com";
 // ※ 選手の名前はこのファイルに書かないでください（GitHubで誰でも見られるため）。名簿はアプリの「管理」タブで登録します。
 // =====================================================================
 
@@ -247,7 +249,7 @@ const ADMIN_EMAILS = ["maeken.ms@gmail.com"];
 const WD = '日月火水木金土';
 const S = {
   db: null, auth: null, user: null, owner: false, authReady: false, ready: false, slow: false, fatal: '',
-  member: null, memberLoaded: false,
+  member: null, memberLoaded: false, isMain: false, adminChecked: false, admins: [], newAdmin: '',
   team: { families: [] }, events: [], answers: {}, members: [], code: '',
   tab: 'answer', sumEvent: null, drafts: {}, sheet: null,
   evForm: null, bulk: '', paste: { text: '', rows: null, loose: [], ev: null }, confirmDel: null, pickFam: '', changingFam: false, saving: {}, codeInput: '', newCode: null,
@@ -326,7 +328,7 @@ function view() {
   if (S.fatal) return [h('div', { class: 'empty' }, h('strong', null, '準備ができていません'), h('span', null, S.fatal))];
   if (!S.authReady) return [h('div', { class: 'empty' }, h('strong', null, '読み込み中…'))];
   if (!S.user) return loginView();
-  if (!S.owner && !S.memberLoaded) return [h('div', { class: 'empty' }, h('strong', null, '読み込み中…'))];
+  if (!S.owner && (!S.memberLoaded || !S.adminChecked)) return [h('div', { class: 'empty' }, h('strong', null, '読み込み中…'))];
   if (!S.owner && !S.member) return codeView();
   if (!S.ready) return [h('div', { class: 'empty' }, h('strong', null, S.slow ? 'まだデータに接続できていません' : '読み込み中…'),
     h('span', null, S.slow ? '通信状況を確認して、ページを再読み込みしてください。' : '行事と出席表を準備しています。'),
@@ -373,7 +375,7 @@ function codeView() {
 async function joinTeam() {
   const code = S.codeInput.trim(); if (!code) { toast('合言葉を入れてください'); return; }
   try {
-    await S.db.doc(`${BASE}/members/${S.user.uid}`).set({ code, familyId: '', name: S.user.displayName || '', at: Date.now() });
+    await S.db.doc(`${BASE}/members/${S.user.uid}`).set({ code, familyId: '', name: S.user.displayName || '', email: (S.user.email || '').toLowerCase(), at: Date.now() });
     S.codeInput = '';
   } catch (e) {
     if (e.code === 'permission-denied') toast('合言葉が違います。もう一度確かめてください。');
@@ -470,7 +472,7 @@ function answerForm(d, rerender, key) {
       h('div', { class: 'ctl' },
         h('button', { 'aria-label': '減らす', disabled: d.seats <= 1, onclick: () => { d.seats--; rerender(); } }, '−'),
         h('span', { class: 'n' }, d.seats),
-        h('button', { 'aria-label': '増やす', disabled: d.seats >= 7, onclick: () => { d.seats++; rerender(); } }, '+')),
+        h('button', { 'aria-label': '増やす', disabled: d.seats >= 10, onclick: () => { d.seats++; rerender(); } }, '+')),
       h('span', { class: 'muted' }, '人')) : null,
     toggle('自走', 'self', '配車に乗らず、自分で行く', () => { d.car = false; }),
     h('div', { class: 'field' }, h('label', { class: 'label', for: 'note-' + key }, '備考'),
@@ -480,7 +482,7 @@ function answerForm(d, rerender, key) {
 async function linkFamily() {
   const fid = S.pickFam; if (!fid) { toast('選手を選んでください'); return; }
   try {
-    await S.db.doc(`${BASE}/members/${S.user.uid}`).set({ familyId: fid, name: S.user.displayName || '', at: Date.now() }, { merge: true });
+    await S.db.doc(`${BASE}/members/${S.user.uid}`).set({ familyId: fid, name: S.user.displayName || '', email: (S.user.email || '').toLowerCase(), at: Date.now() }, { merge: true });
     S.changingFam = false; S.drafts = {}; toast(famName(famById(fid)) + ' の家庭として登録しました'); render();
   } catch (e) { writeErr(e); }
 }
@@ -556,9 +558,9 @@ function summaryView() {
     S.owner ? h('span', { class: 'muted' }, '名前の行をタップすると代理入力できます') : null,
     fams.length ? h('div', { class: 'tablewrap' }, sheet) : h('span', { class: 'muted' }, '名簿が登録されていません。'),
     cars.length ? h('span', { class: 'muted' }, `配車 ${cars.length}台・乗せられる選手 ${seats}人分`) : null,
-    h('div', { class: 'row' },
+    S.owner ? h('div', { class: 'row' },
       h('button', { class: 'btn small', onclick: () => shareSheetImage(ev, X) }, '画像にしてLINEで送る'),
-      h('button', { class: 'btn ghost small', onclick: () => copySheet(ev, X) }, '表をコピー（Excel・Word用）'))));
+      h('button', { class: 'btn ghost small', onclick: () => copySheet(ev, X) }, '表をコピー（Excel・Word用）')) : null));
 
   if (S.owner) out.push(importCard(ev));
   if (noAns.length) {
@@ -773,7 +775,7 @@ function parseLine(text, families) {
     ).filter(Boolean).join(' ').slice(0, 80);
     return {
       ids: b.ids, familyId: b.ids.length === 1 ? b.ids[0] : '', father, mother,
-      car: carMark === '○', seats: carMark === '○' && seatM ? Math.min(7, Number(seatM[1])) : (carMark === '○' ? 0 : 0),
+      car: carMark === '○', seats: carMark === '○' && seatM ? Math.min(10, Number(seatM[1])) : (carMark === '○' ? 0 : 0),
       self, toban, note, raw: body, include: b.ids.length === 1,
     };
   });
@@ -920,6 +922,23 @@ function adminView() {
     }))));
 
   const mem = [...S.members];
+  const adminSet = new Set(S.admins);
+  if (S.isMain) out.push(h('div', { class: 'card' },
+    h('h2', null, '管理者'),
+    h('span', { class: 'muted' }, '管理者は、行事・名簿の登録、代理入力、LINEの取り込み、画像・コピーの出力ができます。選任と解除は代表（あなた）だけができます。'),
+    h('div', { class: 'row between', style: 'border-bottom:1px solid var(--line);padding-bottom:6px' }, h('span', null, MAIN_ADMIN), h('span', { class: 'muted' }, '代表')),
+    S.admins.map(em => {
+      const m = S.members.find(x => x.email === em); const del = S.confirmDel === 'a:' + em;
+      return h('div', { class: 'row between', style: 'border-bottom:1px solid var(--line);padding-bottom:6px' },
+        h('div', { style: 'min-width:0' }, h('strong', null, m ? (m.name || em) : em), m ? h('div', { class: 'muted' }, em) : null),
+        del ? h('div', { class: 'row' }, h('button', { class: 'btn danger small', onclick: () => setAdmins(S.admins.filter(x => x !== em), '管理者から外しました') }, '解除'),
+                h('button', { class: 'btn ghost small', onclick: () => { S.confirmDel = null; render(); } }, 'やめる'))
+            : h('button', { class: 'btn ghost small', onclick: () => { S.confirmDel = 'a:' + em; render(); } }, '解除'));
+    }),
+    h('div', { class: 'row', style: 'flex-wrap:nowrap' },
+      h('input', { id: 'newadmin', type: 'email', autocomplete: 'off', placeholder: '追加するGmailアドレス', value: S.newAdmin, oninput: e => S.newAdmin = e.target.value }),
+      h('button', { class: 'btn', style: 'flex:none', onclick: () => addAdmin(S.newAdmin) }, '追加')),
+    h('span', { class: 'muted' }, '下の「ログインした保護者」の「管理者にする」からも選べます。')));
   out.push(h('div', { class: 'card' },
     h('div', { class: 'row between' }, h('h2', null, 'ログインした保護者'), h('span', { class: 'muted' }, `${mem.length}人`)),
     h('span', { class: 'muted' }, '知らない人がいたら「外す」を押してください。その人は合言葉を入れ直すまで中を見られなくなります。'),
@@ -929,7 +948,10 @@ function adminView() {
         h('div', { style: 'min-width:0' }, h('strong', null, m.name || '（名前なし）'), h('div', { class: 'muted' }, f ? f.name + ' の家庭' : '選手未選択')),
         del ? h('div', { class: 'row' }, h('button', { class: 'btn danger small', onclick: () => delMember(m.id) }, '外す'),
                 h('button', { class: 'btn ghost small', onclick: () => { S.confirmDel = null; render(); } }, 'やめる'))
-            : h('button', { class: 'btn ghost small', onclick: () => { S.confirmDel = 'm:' + m.id; render(); } }, '外す'));
+            : h('div', { class: 'row' },
+                S.isMain && m.email && m.email !== MAIN_ADMIN && !adminSet.has(m.email) ? h('button', { class: 'btn ghost small', onclick: () => addAdmin(m.email) }, '管理者にする') : null,
+                adminSet.has(m.email) || m.email === MAIN_ADMIN ? h('span', { class: 'chip s-done' }, '管理者') : null,
+                h('button', { class: 'btn ghost small', onclick: () => { S.confirmDel = 'm:' + m.id; render(); } }, '外す')));
     }) : h('span', { class: 'muted' }, 'まだいません。')));
   return out;
 }
@@ -976,6 +998,16 @@ async function saveEvent() {
 async function delEvent(id) {
   try { await S.db.doc(`${BASE}/events/${id}`).delete(); S.confirmDel = null; toast('行事を削除しました'); render(); }
   catch (e) { writeErr(e); }
+}
+async function setAdmins(list, msg) {
+  try { await S.db.doc(`${BASE}/private/admins`).set({ emails: list }); S.confirmDel = null; S.newAdmin = ''; toast(msg); render(); }
+  catch (e) { writeErr(e); }
+}
+function addAdmin(email) {
+  const em = String(email || '').trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)) { toast('Gmailアドレスを正しく入れてください'); return; }
+  if (em === MAIN_ADMIN || S.admins.includes(em)) { toast('すでに管理者です'); return; }
+  setAdmins([...S.admins, em], em + ' を管理者にしました');
 }
 async function delMember(id) {
   try { await S.db.doc(`${BASE}/members/${id}`).delete(); S.confirmDel = null; toast('外しました'); render(); }
@@ -1032,6 +1064,7 @@ function startData() {
   if (S.owner) {
     unsubs.push(db.collection(`${BASE}/members`).onSnapshot({ includeMetadataChanges: true }, s => { S.members = s.docs.map(d => ({ id: d.id, ...d.data() })); mark('members', s); }, onErr));
     db.doc(`${BASE}/private/code`).get().then(s => { S.code = s.exists ? (s.data().code || '') : ''; render(); }).catch(() => {});
+    unsubs.push(db.doc(`${BASE}/private/admins`).onSnapshot(s => { S.admins = (s.exists && s.data().emails) || []; if (S.ready) render(); }, () => {}));
   }
 }
 
@@ -1044,13 +1077,22 @@ function boot() {
   document.getElementById('logout').addEventListener('click', () => S.auth.signOut());
   S.auth.onAuthStateChanged(u => {
     S.user = u; S.authReady = true;
-    S.owner = !!(u && u.email && ADMIN_EMAILS.map(x => x.toLowerCase()).includes(u.email.toLowerCase()));
+    const email = ((u && u.email) || '').toLowerCase();
+    S.isMain = !!email && email === MAIN_ADMIN.toLowerCase();
+    S.owner = S.isMain; S.adminChecked = S.isMain || !u;
     stopData(); if (memberUnsub) { memberUnsub(); memberUnsub = null; }
     S.member = null; S.memberLoaded = false; S.drafts = {}; S.tab = 'answer';
+    if (u && !S.isMain) {   // 代表に選任された管理者かどうか（管理者だけが読める名簿を確かめる）
+      S.db.doc(`${BASE}/private/admins`).get().then(d => {
+        if (S.user !== u) return;
+        if (d.exists && (d.data().emails || []).includes(email)) { S.owner = true; stopData(); startData(); }
+      }).catch(() => {}).finally(() => { if (S.user === u) { S.adminChecked = true; render(); } });
+    }
     if (u) {
       memberUnsub = S.db.doc(`${BASE}/members/${u.uid}`).onSnapshot({ includeMetadataChanges: true }, s => {
         if (s.metadata.hasPendingWrites) return;   // 登録がサーバーに届いてから進む
         S.member = s.exists ? s.data() : null; S.memberLoaded = true;
+        if (S.member && !S.member.email && u.email) S.db.doc(`${BASE}/members/${u.uid}`).set({ email: u.email.toLowerCase() }, { merge: true }).catch(() => {});   // 以前に登録した人にもメールを記録
         if (S.owner || S.member) startData(); else stopData();
         render();
       }, e => { console.error(e); S.memberLoaded = true; render(); });
