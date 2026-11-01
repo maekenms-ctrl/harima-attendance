@@ -179,6 +179,12 @@ dl.foot { display: grid; grid-template-columns: 3.5em minmax(0, 1fr); gap: 6px 1
 dl.foot dt { font-weight: 700; color: var(--muted); }
 dl.foot dd { margin: 0; min-width: 0; }
 .stat .k { white-space: nowrap; }
+.pv { border: 1px solid var(--line); border-radius: 8px; padding: 10px; display: flex; flex-direction: column; gap: 8px; background: var(--sunk); }
+.pv.off { opacity: .55; }
+.pv input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--accent); }
+.pv select { padding: 4px 6px; }
+.warn { font-size: .8rem; color: var(--ng); font-weight: 700; }
+pre.raw { white-space: pre-wrap; font-family: var(--body); font-size: .8rem; margin: 4px 0 0; color: var(--muted); }
 </style>
 </head>
 <body>
@@ -219,7 +225,7 @@ const S = {
   member: null, memberLoaded: false,
   team: { families: [] }, events: [], answers: {}, members: [], code: '',
   tab: 'answer', sumEvent: null, drafts: {}, sheet: null,
-  evForm: null, bulk: '', confirmDel: null, pickFam: '', changingFam: false, saving: {}, codeInput: '', newCode: null,
+  evForm: null, bulk: '', paste: { text: '', rows: null, loose: [], ev: null }, confirmDel: null, pickFam: '', changingFam: false, saving: {}, codeInput: '', newCode: null,
 };
 const isLine = /\bLine\//i.test(navigator.userAgent);
 
@@ -291,7 +297,8 @@ function view() {
   if (!S.owner && !S.memberLoaded) return [h('div', { class: 'empty' }, h('strong', null, '読み込み中…'))];
   if (!S.owner && !S.member) return codeView();
   if (!S.ready) return [h('div', { class: 'empty' }, h('strong', null, S.slow ? 'まだデータに接続できていません' : '読み込み中…'),
-    h('span', null, S.slow ? '通信状況を確認してください。つながりしだい表示されます。' : '行事と出席表を準備しています。'))];
+    h('span', null, S.slow ? '通信状況を確認して、ページを再読み込みしてください。' : '行事と出席表を準備しています。'),
+    S.slow ? h('button', { class: 'btn ghost small', onclick: () => location.reload() }, '再読み込み') : null)];
   if (S.tab === 'summary') return summaryView();
   if (S.tab === 'admin' && S.owner) return adminView();
   return answerView();
@@ -314,7 +321,8 @@ async function login() {
   p.setCustomParameters({ prompt: 'select_account' });
   try { await S.auth.signInWithPopup(p); }
   catch (e) {
-    if (e.code === 'auth/popup-blocked' || e.code === 'auth/operation-not-supported-in-this-environment') { await S.auth.signInWithRedirect(p); return; }
+    if (e.code === 'auth/popup-blocked') { toast('ログイン画面が開けませんでした。SafariやChromeで開き直してから、もう一度押してください。'); return; }
+    if (e.code === 'auth/operation-not-supported-in-this-environment' || e.code === 'auth/web-storage-unsupported') { toast('このブラウザではログインできません。SafariやChromeで開き直してください。'); return; }
     if (e.code === 'auth/popup-closed-by-user' || e.code === 'auth/cancelled-popup-request') return;
     if (e.code === 'auth/api-key-not-valid' || e.code === 'auth/invalid-api-key' || (e.message || '').includes('api-key-not-valid')) toast('設定のAPIキーが違います（index.html の apiKey を確認してください）。');
     else if (e.code === 'auth/unauthorized-domain') toast('このページのアドレスがFirebaseに登録されていません（管理者へ連絡してください）。');
@@ -411,7 +419,7 @@ function eventAnswerCard(ev, fid) {
     late ? h('div', { class: 'notice' }, '回答締切を過ぎています。変更がある場合は回答のうえ、係にも一言お伝えください。') : null,
     answerForm(d, () => render(), ev.id),
     h('div', { class: 'row between' },
-      h('span', { class: 'muted' }, cur ? (cur.by === 'proxy' ? '係が代理で入力済み' : '回答済み・いつでも変更できます') : ''),
+      h('span', { class: 'muted' }, cur ? (cur.by === 'proxy' ? '係が代理で入力済み' : cur.by === 'line' ? 'LINEの回答を係が取り込み済み' : '回答済み・いつでも変更できます') : ''),
       h('button', { class: 'btn', disabled: !d.father || !d.mother || S.saving[ev.id], onclick: () => saveAnswer(fid, ev.id, d, 'self') }, cur ? '回答を更新する' : 'この内容で回答する')));
 }
 
@@ -491,7 +499,7 @@ function summaryView() {
       h('td', { class: 'num mark' }, a.father === '○' ? '○' : ''),
       h('td', { class: 'num mark' }, a.mother === '○' ? '○' : ''),
       h('td', { class: 'num mark' }, carCell(a)),
-      h('td', { class: 'note' }, [a.self ? '自走' : '', a.note || ''].filter(Boolean).join('　'), a.by === 'proxy' ? h('span', { class: 'proxy' }, '代理') : null),
+      h('td', { class: 'note' }, [a.self ? '自走' : '', a.note || ''].filter(Boolean).join('　'), a.by === 'proxy' ? h('span', { class: 'proxy' }, '代理') : a.by === 'line' ? h('span', { class: 'proxy' }, 'LINE') : null),
     ] : h('td', { colspan: '4' }, h('span', { class: 'chip s-none' }, '未回答'))));
   body.push(h('tr', { class: 'total' }, h('td', null, '計'), h('td', { class: 'num' }, n('father')), h('td', { class: 'num' }, n('mother')),
     h('td', { class: 'num' }, cars.length), h('td', null, cars.length ? `乗車 ${seats}人分` : '')));
@@ -507,6 +515,7 @@ function summaryView() {
       h('dt', null, '自走'), h('dd', null, selfs.length ? selfs.join('、') : h('span', { class: 'muted' }, 'なし'))),
     h('div', null, h('button', { class: 'btn ghost small', onclick: () => copyText(tableText(ev, rows, { toban, selfs, cars, seats })) }, '表をコピー（Excel・Wordに貼れます）'))));
 
+  if (S.owner) out.push(importCard(ev));
   if (noAns.length) {
     const msg = `【${fmtDate(ev.date)} ${ev.title}】出欠が未回答のご家庭：${noAns.map(f => f.name).join('、')}。${ev.deadline ? fmtDate(ev.deadline) + 'までに' : ''}回答をお願いします。`;
     out.push(h('div', { class: 'card' },
@@ -534,6 +543,153 @@ function copyText(t, selId) {
   };
   try { navigator.clipboard.writeText(t).then(() => toast('コピーしました'), fallback); }
   catch (e) { fallback(); }
+}
+
+// ---------- LINEの回答文の読み取り ----------
+const MARK = '○〇◯⭕Ｏ×✕✖xXＸ✗';
+const normName = t => String(t || '').replace(/[\s　・]/g, '');
+const toMark = c => /[○〇◯⭕Ｏ]/.test(c) ? '○' : '×';
+const EMOJI = /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}\u{200D}]/gu;
+
+function lineClean(text) {
+  return String(text || '').replace(/\r/g, '').split('\n').map(l => {
+    let t = l;
+    const parts = t.split('\t');   // トーク履歴の「19:58<TAB>名前<TAB>本文」
+    if (parts.length >= 3 && /^\d{1,2}:\d{2}$/.test(parts[0].trim())) t = parts.slice(2).join(' ');
+    return t.replace(/^"+|"+$/g, '').trim();
+  }).filter(l => l && !/^\d{4}[\/.]\d{1,2}[\/.]\d{1,2}/.test(l) && !/^\[LINE\]/.test(l) && !/^保存日時/.test(l));
+}
+
+function nameAtStart(line, F) {
+  const n = normName(line);
+  let full = F.filter(f => f.full && n.startsWith(f.full));
+  if (full.length) { const L = Math.max(...full.map(f => f.full.length)); return { ids: full.filter(f => f.full.length === L).map(f => f.id), len: L }; }
+  let sur = F.filter(f => f.sur && n.startsWith(f.sur));
+  if (!sur.length) return null;
+  const L = Math.max(...sur.map(f => f.sur.length));
+  sur = sur.filter(f => f.sur.length === L);
+  if (sur.length > 1) {   // 同じ名字（西川さんなど）は名前の1文字目で絞る
+    const rest = n.slice(L);
+    const narrowed = sur.filter(f => f.given && rest.startsWith(f.given[0]));
+    if (narrowed.length) sur = narrowed;
+  }
+  const extra = sur.length === 1 && sur[0].given && n.slice(L).startsWith(sur[0].given) ? sur[0].given.length : 0;
+  return { ids: sur.map(f => f.id), len: L + extra };
+}
+
+function cutName(line, len) {   // 行の先頭から、空白を除いて len 文字分を取り除く
+  let i = 0, c = 0;
+  while (i < line.length && c < len) { if (!/[\s　・]/.test(line[i])) c++; i++; }
+  return line.slice(i);
+}
+
+function markFor(text, key) {
+  const neg = new RegExp(key + '[^\\n' + MARK + ']{0,4}?(不参加|欠席|なし|無し|不可|できません|出来ません|NG)');
+  const m = text.match(new RegExp(key + '[^\\n' + MARK + ']{0,5}?([' + MARK + '])'));
+  if (m) return toMark(m[1]);
+  if (neg.test(text)) return '×';
+  if (new RegExp(key + '\\s*[ー－—―\\-]+\\s*($|\\n)').test(text)) return '';   // 「父ー」は空欄（該当なし）
+  if (new RegExp(key + '[^\\n]{0,4}?(参加|出席|あり|有り|可|できます|出来ます|OK|ok|行きます)').test(text)) return '○';
+  return '';
+}
+
+function parseLine(text, families) {
+  const F = families.map(f => {
+    const parts = String(f.name).trim().split(/[\s　]+/);
+    return { id: f.id, full: normName(f.name), sur: parts.length > 1 ? parts[0] : '', given: parts.length > 1 ? parts.slice(1).join('') : '' };
+  });
+  const lines = lineClean(text);
+  const blocks = []; const loose = [];
+  let cur = null;
+  for (const l of lines) {
+    const hit = nameAtStart(l, F);
+    if (hit) { cur = { ids: hit.ids, lines: [cutName(l, hit.len)] }; blocks.push(cur); }
+    else if (cur) cur.lines.push(l);
+    else loose.push(l);
+  }
+  const rows = blocks.map(b => {
+    const body = b.lines.join('\n');
+    let father = markFor(body, '父'), mother = markFor(body, '母');
+    const both = markFor(body, '父母');
+    if (both) { if (!/父(?!母)/.test(body.replace(/父母/g, ''))) father = both; mother = mother || both; if (!father) father = both; }
+    const carMark = markFor(body, '配車');
+    const seatM = body.match(/配車[^\n]*?(\d+)\s*[人名]/) || body.match(/(\d+)\s*[人名](まで)?乗/);
+    const self = /自走/.test(body) && !/自走[^\n]{0,3}(なし|無し|しない|しません)/.test(body);
+    const toban = /当番/.test(body) && !/当番[^\n]{0,4}(ではない|じゃない|なし|無し|外)/.test(body);
+    const note = b.lines.map(l => l
+      .replace(EMOJI, '')
+      .replace(new RegExp('(父母|父|母|配車)[^\\n' + MARK + ']{0,5}?[' + MARK + ']', 'g'), '')
+      .replace(/(父母|父|母|配車)\s*[→⇒>＞:：=＝は\-ー－—―\s]*(不参加|欠席|なし|無し|不可|参加|出席|あり|有り|可|できます|出来ます|できません|行きます)?/g, '')
+      .replace(/\d+\s*[人名](まで)?(乗れます|乗車可|乗せられます)?/g, '')
+      .replace(/当番(です|になります|でした)?/g, '').replace(/自走(です|します)?/g, '')
+      .replace(/よろしく(お願い)?(いた)?(し|致し)?ます[!！。]*|お願い(いた)?(し|致し)?ます[!！。]*|宜しく[^\n]*/g, '')
+      .replace(/^(です|になります)[。！!]*$/, '')
+      .replace(/^[\s、。,，・:：→]+|[\s、。,，・]+$/g, '').trim()
+    ).filter(Boolean).join(' ').slice(0, 80);
+    return {
+      ids: b.ids, familyId: b.ids.length === 1 ? b.ids[0] : '', father, mother,
+      car: carMark === '○', seats: carMark === '○' && seatM ? Math.min(7, Number(seatM[1])) : (carMark === '○' ? 0 : 0),
+      self, toban, note, raw: body, include: b.ids.length === 1,
+    };
+  });
+  return { rows, loose };
+}
+
+function importCard(ev) {
+  const P = S.paste;
+  const fams = families();
+  const card = h('div', { class: 'card' },
+    h('h3', null, 'LINEの回答を取り込む'),
+    h('span', { class: 'muted' }, 'LINEのノートのコメントやトークを長押し→「コピー」して、下に貼ってください。何件分でも続けて貼れます。名字で選手を見つけ、父・母・配車の○×、自走、当番、備考を読み取ります。'),
+    h('textarea', { id: 'paste', placeholder: '南\n父→×\n母→○ 当番です\n\n原康祐\n父→○\n母→○\n配車→○', oninput: e => { P.text = e.target.value; } }, P.text),
+    h('div', { class: 'row' },
+      h('button', { class: 'btn', onclick: () => { const r = parseLine(P.text, fams); P.rows = r.rows; P.loose = r.loose; P.ev = ev.id; render(); } }, '読み取る'),
+      P.rows ? h('button', { class: 'btn ghost', onclick: () => { P.rows = null; P.loose = []; render(); } }, 'やめる') : null));
+  if (!P.rows || P.ev !== ev.id) return card;
+  if (!P.rows.length) { card.append(h('div', { class: 'notice' }, '選手の名前が見つかりませんでした。各回答の最初の行に、名字か名前を書いてもらってください。')); return card; }
+  const sel = (r, k) => h('select', { 'aria-label': k === 'father' ? '父' : '母', style: 'width:auto', onchange: e => { r[k] = e.target.value; } },
+    [['', '空欄'], ['○', '○'], ['×', '×']].map(([v, t]) => h('option', { value: v, selected: r[k] === v }, t)));
+  card.append(h('div', { class: 'label' }, `読み取り結果（${P.rows.length}件）— 確かめて、違うところは直してから取り込んでください`));
+  P.rows.forEach((r, i) => {
+    const existing = r.familyId ? ans(r.familyId, ev.id) : null;
+    card.append(h('div', { class: 'pv' + (r.include ? '' : ' off') },
+      h('div', { class: 'row between' },
+        h('label', { class: 'row', for: 'inc-' + i, style: 'gap:6px' }, h('input', { type: 'checkbox', id: 'inc-' + i, checked: r.include, onchange: e => { r.include = e.target.checked; render(); } }), '取り込む'),
+        h('select', { 'aria-label': '選手', style: 'width:auto;max-width:60%', onchange: e => { r.familyId = e.target.value; r.include = !!e.target.value; render(); } },
+          h('option', { value: '' }, r.ids.length > 1 ? '選手を選ぶ（同じ名字）' : '選手を選ぶ'),
+          (r.ids.length > 1 ? fams.filter(f => r.ids.includes(f.id)) : fams).map(f => h('option', { value: f.id, selected: r.familyId === f.id }, f.name)))),
+      h('div', { class: 'row', style: 'gap:10px' },
+        h('span', null, '父 ', sel(r, 'father')), h('span', null, '母 ', sel(r, 'mother')),
+        h('label', { class: 'row', for: 'car-' + i, style: 'gap:4px' }, h('input', { type: 'checkbox', id: 'car-' + i, checked: r.car, onchange: e => { r.car = e.target.checked; } }), '配車'),
+        h('label', { class: 'row', for: 'self-' + i, style: 'gap:4px' }, h('input', { type: 'checkbox', id: 'self-' + i, checked: r.self, onchange: e => { r.self = e.target.checked; } }), '自走'),
+        h('label', { class: 'row', for: 'tb-' + i, style: 'gap:4px' }, h('input', { type: 'checkbox', id: 'tb-' + i, checked: r.toban, onchange: e => { r.toban = e.target.checked; } }), '当番')),
+      h('input', { type: 'text', 'aria-label': '備考', placeholder: '備考', value: r.note, maxlength: '80', oninput: e => { r.note = e.target.value; } }),
+      existing && existing.by === 'self' ? h('span', { class: 'warn' }, 'アプリで回答済みです。取り込むと上書きします。') : null,
+      h('details', null, h('summary', null, '元の文'), h('pre', { class: 'raw' }, r.raw))));
+  });
+  if (P.loose.length) card.append(h('div', { class: 'notice' }, '名前が見つからず読み飛ばした文：', h('pre', { class: 'raw' }, P.loose.join('\n'))));
+  const n = P.rows.filter(r => r.include && r.familyId).length;
+  card.append(h('div', null, h('button', { class: 'btn', disabled: !n, onclick: () => importRows(ev) }, `${n}件を出席表に取り込む`)));
+  return card;
+}
+async function importRows(ev) {
+  const P = S.paste;
+  const rows = P.rows.filter(r => r.include && r.familyId);
+  const batch = S.db.batch();
+  const now = Date.now();
+  rows.forEach((r, i) => {
+    batch.set(S.db.doc(`${BASE}/answers/${r.familyId}`), { responses: { [ev.id]: {
+      father: r.father, mother: r.mother, car: !!r.car, seats: r.car ? (Number(r.seats) || 0) : 0, self: !!r.self,
+      note: (r.note || '').trim().slice(0, 80), by: 'line', at: now + i } } }, { merge: true });
+  });
+  const addToban = rows.filter(r => r.toban).map(r => r.familyId).filter(id => !(ev.toban || []).includes(id));
+  if (addToban.length) batch.set(S.db.doc(`${BASE}/events/${ev.id}`), { toban: [...(ev.toban || []), ...addToban] }, { merge: true });
+  try {
+    await batch.commit();
+    S.paste = { text: '', rows: null, loose: [], ev: null };
+    toast(`${rows.length}件を取り込みました` + (addToban.length ? `（当番 ${addToban.length}家庭を追加）` : ''));
+    render();
+  } catch (e) { writeErr(e); }
 }
 
 // ----- 代理入力 (管理者) -----
@@ -682,6 +838,7 @@ function delFamily(id) { saveRoster(families().filter(f => f.id !== id), '削除
 
 // ---------- 起動 ----------
 let unsubs = [];
+let retries = 0;
 function stopData() { unsubs.forEach(u => u()); unsubs = []; S.ready = false; }
 function startData() {
   if (unsubs.length) return;
@@ -690,10 +847,18 @@ function startData() {
   const slowTimer = setTimeout(() => { if (!S.ready) { S.slow = true; render(); } }, 10000);
   const mark = (k, snap) => {
     if (!snap.metadata.fromCache) got[k] = true;
-    if (!S.ready && Object.values(got).every(Boolean)) { S.ready = true; S.slow = false; clearTimeout(slowTimer); }
+    if (!S.ready && Object.values(got).every(Boolean)) { S.ready = true; S.slow = false; retries = 0; clearTimeout(slowTimer); }
     if (S.ready) render();
   };
-  const onErr = e => { console.error(e); clearTimeout(slowTimer); if (e.code === 'permission-denied') { stopData(); } render(); };
+  const onErr = e => {
+    console.error(e); clearTimeout(slowTimer);
+    if (e.code === 'permission-denied') {
+      stopData();
+      if (retries < 3) { retries++; setTimeout(() => { if (S.user && (S.owner || S.member)) startData(); }, 2500); }
+      else { S.slow = true; }
+    }
+    render();
+  };
   const db = S.db;
   unsubs.push(db.doc(BASE).onSnapshot({ includeMetadataChanges: true }, s => { S.team = s.exists ? s.data() : { families: [] }; mark('team', s); }, onErr));
   unsubs.push(db.collection(`${BASE}/events`).onSnapshot({ includeMetadataChanges: true }, s => { S.events = s.docs.map(d => ({ id: d.id, ...d.data() })); mark('events', s); }, onErr));
@@ -717,7 +882,8 @@ function boot() {
     stopData(); if (memberUnsub) { memberUnsub(); memberUnsub = null; }
     S.member = null; S.memberLoaded = false; S.drafts = {}; S.tab = 'answer';
     if (u) {
-      memberUnsub = S.db.doc(`${BASE}/members/${u.uid}`).onSnapshot(s => {
+      memberUnsub = S.db.doc(`${BASE}/members/${u.uid}`).onSnapshot({ includeMetadataChanges: true }, s => {
+        if (s.metadata.hasPendingWrites) return;   // 登録がサーバーに届いてから進む
         S.member = s.exists ? s.data() : null; S.memberLoaded = true;
         if (S.owner || S.member) startData(); else stopData();
         render();
